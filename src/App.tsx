@@ -4,7 +4,8 @@ import {
   Receipt, Trash2, Bot, Loader2, CheckCircle2, PlusCircle, ArrowUpRight, 
   ArrowDownRight, BarChart3, Target, Settings, PieChart,
   ArrowRightLeft, Save, Upload, Home, Target as TargetIcon, User, Camera,
-  Calendar, Check, AlertCircle, RefreshCw, SkipForward, ChevronRight
+  Calendar, Check, AlertCircle, RefreshCw, SkipForward, ChevronRight,
+  KeyRound, LogOut, UserPlus, Phone, ShieldCheck
 } from 'lucide-react';
 
 const injectPWA = () => {
@@ -495,8 +496,19 @@ const TransactionModal = ({ txType, accounts, accountBalances, onClose, onSubmit
 };
 
 export default function App() {
-  const [appState, setAppState] = useState('loading'); 
+  const [appState, setAppState] = useState('loading');
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Autentikasi lokal: nomor WhatsApp + PIN 6 digit.
+  // PIN disimpan sebagai hash SHA-256, bukan teks biasa.
+  const [authMode, setAuthMode] = useState('login');
+  const [authName, setAuthName] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [authPin, setAuthPin] = useState('');
+  const [authConfirmPin, setAuthConfirmPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   
   const [reportPeriod, setReportPeriod] = useState('Bulan Ini');
@@ -526,14 +538,28 @@ export default function App() {
     const loadData = async () => {
       try {
         const users = await idb.get('user');
-        let activeUser = Array.isArray(users) && users.length > 0 ? users[0] : null;
-        if (!activeUser) {
-          activeUser = { id: 'local_user', name: 'Pengguna', phone: '', profilePic: '' };
-          await idb.put('user', activeUser);
+        const storedUser = Array.isArray(users) && users.length > 0 ? users[0] : null;
+
+        if (storedUser) {
+          setUser(storedUser);
+          setAuthName(storedUser.name || '');
+          setAuthPhone(storedUser.phone || '');
+
+          if (!storedUser.pinHash) {
+            setAuthMode('register');
+            setAuthError('Akun lama ditemukan. Silakan buat PIN 6 digit untuk mengamankan akun Anda.');
+            setAppState('auth');
+          } else if (sessionStorage.getItem('dompetku_authenticated') === '1') {
+            setAppState('app');
+          } else {
+            setAuthMode('login');
+            setAppState('auth');
+          }
+        } else {
+          setAuthMode('register');
+          setAppState('auth');
         }
-        setUser(activeUser);
-        setAppState('app');
-        
+
         const accs = await idb.get('accounts') || [];
         const txs = await idb.get('transactions') || [];
         const bdgts = await idb.get('budgets') || [];
@@ -545,20 +571,127 @@ export default function App() {
             { id: 'acc_1', name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0 },
             { id: 'acc_2', name: 'Rekening Bank', type: 'Bank', initialBalance: 0 }
           ];
-          defaultAccounts.forEach(a => idb.put('accounts', a));
+          await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
           setAccounts(defaultAccounts);
-        } else { setAccounts(accs); }
+        } else {
+          setAccounts(accs);
+        }
 
         setBudgets(bdgts);
         setGoals(gls);
         setRecurring(recs);
-        setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp)); 
+        setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
       } catch (err) {
-        console.error("Failed to load DB", err);
+        console.error('Failed to load DB', err);
+        setAuthError('Data aplikasi gagal dimuat. Silakan refresh halaman.');
+        setAppState('auth');
       }
     };
     loadData();
   }, []);
+
+  const normalizePhone = (value = '') => value.replace(/\D/g, '');
+
+  const hashPin = async (pin) => {
+    const data = new TextEncoder().encode(pin);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthBusy(true);
+
+    try {
+      const phone = normalizePhone(authPhone);
+      if (!phone || phone.length < 10 || phone.length > 15) throw new Error('Nomor WhatsApp harus 10–15 digit.');
+      if (!/^\d{6}$/.test(authPin)) throw new Error('PIN harus tepat 6 digit angka.');
+
+      const users = await idb.get('user');
+      const storedUser = Array.isArray(users) && users.length > 0 ? users[0] : null;
+
+      if (authMode === 'register') {
+        if (!authName.trim()) throw new Error('Nama pengguna wajib diisi.');
+        if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
+        if (storedUser?.pinHash) throw new Error('Akun sudah terdaftar di perangkat ini. Silakan masuk.');
+
+        const pinHash = await hashPin(authPin);
+        const newUser = {
+          id: storedUser?.id || 'local_user',
+          name: authName.trim(),
+          phone,
+          pinHash,
+          profilePic: storedUser?.profilePic || ''
+        };
+
+        await idb.put('user', newUser);
+        setUser(newUser);
+        sessionStorage.setItem('dompetku_authenticated', '1');
+        setAuthPin('');
+        setAuthConfirmPin('');
+        setAuthError('');
+        setAppState('app');
+        return;
+      }
+
+      if (authMode === 'forgot') {
+        if (!storedUser?.pinHash) throw new Error('Akun belum terdaftar. Silakan daftar terlebih dahulu.');
+        if (normalizePhone(storedUser.phone) !== phone) throw new Error('Nomor WhatsApp tidak cocok dengan akun ini.');
+        if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
+
+        const pinHash = await hashPin(authPin);
+        const updatedUser = { ...storedUser, phone, pinHash };
+        await idb.put('user', updatedUser);
+        setUser(updatedUser);
+        setAuthMode('login');
+        setAuthPin('');
+        setAuthConfirmPin('');
+        setAuthError('PIN berhasil diubah. Silakan masuk dengan PIN baru.');
+        return;
+      }
+
+      if (!storedUser?.pinHash) {
+        setAuthMode('register');
+        throw new Error('Akun lama belum memiliki PIN. Silakan buat PIN baru.');
+      }
+      if (normalizePhone(storedUser.phone) !== phone) throw new Error('Nomor WhatsApp tidak ditemukan.');
+
+      const pinHash = await hashPin(authPin);
+      if (pinHash !== storedUser.pinHash) throw new Error('PIN salah. Silakan coba lagi atau gunakan Lupa PIN.');
+
+      setUser(storedUser);
+      sessionStorage.setItem('dompetku_authenticated', '1');
+      setAuthPin('');
+      setAuthError('');
+      setAppState('app');
+    } catch (error) {
+      setAuthError(error.message || 'Terjadi kesalahan. Silakan coba lagi.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const switchAuthMode = (mode) => {
+    setAuthMode(mode);
+    setAuthError('');
+    setAuthPin('');
+    setAuthConfirmPin('');
+    if (mode === 'register' && user) {
+      setAuthName(user.name || '');
+      setAuthPhone(user.phone || '');
+    }
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('dompetku_authenticated');
+    setAuthMode('login');
+    setAuthPin('');
+    setAuthConfirmPin('');
+    setAuthError('');
+    setActiveTab('dashboard');
+    setAppState('auth');
+  };
 
   const accountBalances = useMemo(() => {
     const balances = {};
@@ -1224,7 +1357,11 @@ export default function App() {
            </div>
            
            <div className="p-3 space-y-1">
-              <button onClick={handleBackup} className="w-full p-4 flex justify-between items-center hover:bg-[#F7F8FA] transition border border-transparent rounded-xl">
+              <button onClick={handleLogout} className="w-full p-4 flex justify-between items-center hover:bg-red-50 transition border border-transparent rounded-xl group">
+                  <span className="font-bold text-[#DC2626] flex items-center gap-3"><LogOut size={20}/> Keluar / Logout</span>
+                  <ChevronRight size={16} className="text-[#94A3B8] group-hover:text-[#DC2626]"/>
+               </button>
+               <button onClick={handleBackup} className="w-full p-4 flex justify-between items-center hover:bg-[#F7F8FA] transition border border-transparent rounded-xl">
                  <span className="font-bold text-[#172033] flex items-center gap-3"><Save size={20} className="text-[#D4A72C]"/> Backup Data (JSON)</span>
                  <ArrowUpRight size={16} className="text-[#94A3B8]"/>
               </button>
@@ -1242,6 +1379,123 @@ export default function App() {
       </div>
     );
   };
+
+  if (appState === 'auth') {
+    const isRegister = authMode === 'register';
+    const isForgot = authMode === 'forgot';
+
+    return (
+      <div className="min-h-screen bg-[#172033] flex items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-7">
+            <div className="inline-flex w-16 h-16 items-center justify-center rounded-2xl bg-[#D4A72C] shadow-xl mb-4">
+              <Wallet size={34} className="text-[#172033]" />
+            </div>
+            <h1 className="text-3xl font-black text-white">DompetKu</h1>
+            <p className="text-[#D4A72C] text-xs font-bold uppercase tracking-widest mt-1">Catat. Kendalikan. Rencanakan.</p>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-7">
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-black text-[#172033]">
+                  {isRegister ? 'Buat Akun' : isForgot ? 'Lupa PIN' : 'Selamat Datang'}
+                </h2>
+                <p className="text-sm text-[#64748B] font-medium mt-1">
+                  {isRegister
+                    ? 'Daftarkan DompetKu di perangkat ini.'
+                    : isForgot
+                    ? 'Masukkan nomor WhatsApp untuk membuat PIN baru.'
+                    : 'Masuk untuk melihat dan mengelola keuangan Anda.'}
+                </p>
+              </div>
+
+              {authError && (
+                <div className={`mb-4 p-3 rounded-xl text-sm font-bold border ${authError.includes('berhasil') ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                {isRegister && (
+                  <div>
+                    <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nama Pengguna</label>
+                    <div className="relative">
+                      <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                      <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} placeholder="Nama Anda" autoComplete="name"
+                        className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" required />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nomor WhatsApp</label>
+                  <div className="relative">
+                    <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                    <input type="tel" inputMode="numeric" value={authPhone} onChange={e => setAuthPhone(e.target.value.replace(/[^\d]/g, ''))} placeholder="08xxxxxxxxxx" autoComplete="tel"
+                      className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" required />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">{isForgot ? 'PIN Baru (6 digit)' : 'PIN (6 digit)'}</label>
+                  <div className="relative">
+                    <KeyRound size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                    <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authPin}
+                      onChange={e => setAuthPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="••••••" autoComplete={isForgot || isRegister ? 'new-password' : 'current-password'}
+                      className="w-full p-3.5 pl-10 pr-16 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
+                    <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#64748B]">{showPin ? 'Sembunyikan' : 'Lihat'}</button>
+                  </div>
+                </div>
+
+                {(isRegister || isForgot) && (
+                  <div>
+                    <label className="block text-xs font-black text-[#475569] uppercase mb-2">Konfirmasi PIN</label>
+                    <div className="relative">
+                      <ShieldCheck size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                      <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authConfirmPin}
+                        onChange={e => setAuthConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" autoComplete="new-password"
+                        className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
+                    </div>
+                  </div>
+                )}
+
+                <button type="submit" disabled={authBusy}
+                  className="w-full py-4 bg-[#172033] text-[#D4A72C] rounded-xl font-black text-lg shadow-lg hover:bg-[#0F172A] disabled:opacity-60 flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                  {authBusy ? <Loader2 size={22} className="animate-spin" /> : isRegister ? <><UserPlus size={20}/> Daftar & Masuk</> : isForgot ? <><KeyRound size={20}/> Simpan PIN Baru</> : 'Masuk'}
+                </button>
+              </form>
+
+              <div className="mt-6 text-center space-y-3">
+                {!isRegister && !isForgot && (
+                  <>
+                    <button type="button" onClick={() => switchAuthMode('forgot')} className="text-sm font-bold text-[#B8860B] hover:underline">Lupa PIN?</button>
+                    <div className="text-sm text-[#64748B]">
+                      Belum punya akun?{' '}
+                      <button type="button" onClick={() => switchAuthMode('register')} className="font-black text-[#172033] hover:underline">Daftar sekarang</button>
+                    </div>
+                  </>
+                )}
+
+                {isForgot && (
+                  <button type="button" onClick={() => switchAuthMode('login')} className="text-sm font-bold text-[#172033] hover:underline">← Kembali ke Login</button>
+                )}
+
+                {isRegister && user?.pinHash && (
+                  <button type="button" onClick={() => switchAuthMode('login')} className="text-sm font-bold text-[#172033] hover:underline">← Kembali ke Login</button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-[#F7F8FA] border-t border-[#E2E8F0] p-4 text-center">
+              <p className="text-[10px] font-bold text-[#94A3B8]">DompetKu v1.0 • Data tersimpan di perangkat Anda</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (showPreview) {
     return (
