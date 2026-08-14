@@ -118,22 +118,30 @@ const CATEGORIES = {
   expense: ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Pendidikan', 'Kesehatan', 'Hiburan', 'Lainnya']
 };
 
-const UserAvatar = ({ user, size = 10, textClass = "text-xl" }) => (
-  user?.profilePic ? (
-    <img src={user.profilePic} alt="Profile" className={`w-${size} h-${size} rounded-full object-cover border-2 border-[#D4A72C] shadow-md flex-shrink-0`} />
-  ) : (
-    <div className={`w-${size} h-${size} bg-[#0F172A] rounded-full flex items-center justify-center text-[#D4A72C] font-black uppercase shadow-inner flex-shrink-0 ${textClass}`}>
-      {user?.name?.charAt(0) || '?'}
+const UserAvatar = ({ user, size = 10, textClass = "text-xl" }) => {
+  const sizeMap = { 8: 'w-8 h-8', 10: 'w-10 h-10', 12: 'w-12 h-12', 16: 'w-16 h-16', 20: 'w-20 h-20', 24: 'w-24 h-24' };
+  const avatarSize = sizeMap[size] || 'w-10 h-10';
+
+  if (user?.profilePic) {
+    return <img src={user.profilePic} alt="Foto profil" className={`${avatarSize} rounded-full object-cover border-2 border-[#D4A72C] shadow-md flex-shrink-0`} />;
+  }
+
+  return (
+    <div className={`${avatarSize} bg-[#0F172A] rounded-full flex items-center justify-center text-[#D4A72C] font-black uppercase shadow-inner flex-shrink-0 ${textClass}`}>
+      {user?.name?.trim()?.charAt(0)?.toUpperCase() || '?'}
     </div>
-  )
-);
+  );
+};
 
 const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
-  let runBal = 0;
-  const calcData = [...data].sort((a,b)=>a.timestamp - b.timestamp).map(t => {
-    if (t.type === 'income') runBal += t.amount;
-    if (t.type === 'expense') runBal -= t.amount;
-    return {...t, runBal};
+  const initialTotal = accounts.reduce((total, account) => total + (Number(account.initialBalance) || 0), 0);
+  let runBal = initialTotal;
+
+  const calcData = [...data].sort((a, b) => a.timestamp - b.timestamp).map(t => {
+    const amount = Number(t.amount) || 0;
+    if (t.type === 'income') runBal += amount;
+    if (t.type === 'expense') runBal -= amount;
+    return { ...t, runBal };
   }).reverse();
 
   return (
@@ -554,22 +562,21 @@ export default function App() {
 
   const accountBalances = useMemo(() => {
     const balances = {};
-    accounts.forEach(a => balances[a.id] = Number(a.initialBalance) || 0);
-    const ascTxs = [...transactions].sort((a,b)=>a.timestamp - b.timestamp);
-    ascTxs.forEach(t => {
-      if (t.type === 'income' && balances[t.accountId] !== undefined) balances[t.accountId] += t.amount;
-      if (t.type === 'expense' && balances[t.accountId] !== undefined) balances[t.accountId] -= t.amount;
+    accounts.forEach(account => { balances[account.id] = Number(account.initialBalance) || 0; });
+
+    [...transactions].sort((a, b) => a.timestamp - b.timestamp).forEach(t => {
+      const amount = Number(t.amount) || 0;
+      if (t.type === 'income' && balances[t.accountId] !== undefined) balances[t.accountId] += amount;
+      if (t.type === 'expense' && balances[t.accountId] !== undefined) balances[t.accountId] -= amount;
       if (t.type === 'transfer') {
-        if (balances[t.accountId] !== undefined) balances[t.accountId] -= t.amount;
-        if (balances[t.toAccountId] !== undefined) balances[t.toAccountId] += t.amount;
+        if (t.accountId && balances[t.accountId] !== undefined) balances[t.accountId] -= amount;
+        if (t.toAccountId && balances[t.toAccountId] !== undefined) balances[t.toAccountId] += amount;
       }
     });
     return balances;
   }, [transactions, accounts]);
 
-  const netWorth = useMemo(() => {
-    return Object.values(accountBalances).reduce((sum, bal) => sum + bal, 0);
-  }, [accountBalances]);
+  const netWorth = useMemo(() => Object.values(accountBalances).reduce((total, balance) => total + (Number(balance) || 0), 0), [accountBalances]);
 
   const filteredTransactions = useMemo(() => {
     const now = new Date();
@@ -672,7 +679,11 @@ export default function App() {
   };
 
   const handleTransactionSubmit = async (formData) => {
-    const val = parseInt(formData.amount);
+    const val = Number(formData.amount);
+    if (!Number.isFinite(val) || val <= 0) { alert('Nominal transaksi harus lebih dari Rp0.'); return; }
+    if (!formData.accountId) { alert('Pilih akun terlebih dahulu.'); return; }
+    if (txType === 'transfer' && !formData.toAccountId) { alert('Pilih akun tujuan transfer.'); return; }
+    if (txType === 'transfer' && formData.accountId === formData.toAccountId) { alert('Akun sumber dan akun tujuan tidak boleh sama.'); return; }
 
     const newTx = {
       id: 'tx_'+Date.now().toString(),
@@ -1137,34 +1148,78 @@ export default function App() {
     };
 
     const handleProfilePicChange = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { alert('File harus berupa gambar.'); return; }
+      if (file.size > 2 * 1024 * 1024) { alert('Ukuran foto maksimal 2 MB.'); return; }
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
           const updatedUser = { ...user, profilePic: event.target.result };
           await idb.put('user', updatedUser);
           setUser(updatedUser);
-        };
-        reader.readAsDataURL(file);
-      }
+          e.target.value = '';
+          alert('Foto profil berhasil diperbarui.');
+        } catch (error) { console.error(error); alert('Gagal menyimpan foto profil.'); }
+      };
+      reader.readAsDataURL(file);
+    };
+
+    const handleRemoveProfilePic = async () => {
+      if (!user?.profilePic) return;
+      if (!window.confirm('Hapus foto profil ini?')) return;
+      try {
+        const updatedUser = { ...user, profilePic: '' };
+        await idb.put('user', updatedUser);
+        setUser(updatedUser);
+        alert('Foto profil berhasil dihapus.');
+      } catch (error) { console.error(error); alert('Gagal menghapus foto profil.'); }
+    };
+
+    const handleSaveProfile = async () => {
+      const cleanName = user?.name?.trim();
+      if (!cleanName) { alert('Nama tidak boleh kosong.'); return; }
+      try {
+        const updatedUser = { ...user, name: cleanName, phone: user?.phone?.trim() || '' };
+        await idb.put('user', updatedUser);
+        setUser(updatedUser);
+        alert('Profil berhasil disimpan.');
+      } catch (error) { console.error(error); alert('Gagal menyimpan profil.'); }
     };
 
     return (
       <div className="space-y-6 pb-24 animate-in fade-in max-w-lg mx-auto">
         <h2 className="text-2xl font-black text-[#172033] text-center">Pengaturan Akun</h2>
         <div className="bg-white rounded-3xl shadow-sm border border-[#E2E8F0] overflow-hidden">
-           <div className="p-8 border-b border-[#E2E8F0] flex flex-col items-center gap-4 bg-[#F7F8FA]">
-              <div className="relative">
-                <UserAvatar user={user} size={24} textClass="text-4xl" />
-                <button onClick={() => fileInputRef.current.click()} className="absolute bottom-0 right-0 bg-[#D4A72C] p-2 rounded-full text-[#172033] border-2 border-white shadow-md hover:bg-[#F2C94C] transition active:scale-95">
-                  <Camera size={16} />
-                </button>
-                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleProfilePicChange} className="hidden" />
+           <div className="p-8 border-b border-[#E2E8F0] bg-[#F7F8FA]">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <UserAvatar user={user} size={24} textClass="text-4xl" />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-[#D4A72C] p-2.5 rounded-full text-[#172033] border-2 border-white shadow-md hover:bg-[#F2C94C] transition active:scale-95" title="Ganti foto">
+                    <Camera size={17} />
+                  </button>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" ref={fileInputRef} onChange={handleProfilePicChange} className="hidden" />
+                </div>
+                {user?.profilePic && (
+                  <button type="button" onClick={handleRemoveProfilePic} className="text-xs font-bold text-[#DC2626] hover:underline">Hapus foto profil</button>
+                )}
               </div>
-              <div className="text-center">
-                <h3 className="font-black text-2xl text-[#172033]">{user?.name}</h3>
-                <p className="text-sm font-bold text-[#64748B] mb-2">{user?.phone}</p>
-                <span className="text-[10px] font-bold bg-[#16A34A]/10 text-[#16A34A] px-3 py-1 rounded-full flex items-center justify-center gap-1 mx-auto w-max border border-[#16A34A]/20"><CheckCircle2 size={12}/> Offline First Ready</span>
+
+              <div className="mt-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nama Pengguna</label>
+                  <input type="text" value={user?.name || ''} onChange={(e) => setUser({ ...user, name: e.target.value })} placeholder="Masukkan nama Anda" className="w-full p-3.5 bg-white border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nomor WhatsApp</label>
+                  <input type="text" value={user?.phone || ''} onChange={(e) => setUser({ ...user, phone: e.target.value })} placeholder="08xxxxxxxxxx" className="w-full p-3.5 bg-white border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" />
+                </div>
+                <button type="button" onClick={handleSaveProfile} className="w-full py-3.5 bg-[#172033] text-[#D4A72C] rounded-xl font-black flex items-center justify-center gap-2 shadow-md hover:bg-[#0F172A] transition active:scale-[0.99]">
+                  <Save size={18} /> Simpan Profil
+                </button>
+                <div className="flex justify-center">
+                  <span className="text-[10px] font-bold bg-[#16A34A]/10 text-[#16A34A] px-3 py-1 rounded-full flex items-center justify-center gap-1 border border-[#16A34A]/20"><CheckCircle2 size={12}/> Offline First Ready</span>
+                </div>
               </div>
            </div>
            
