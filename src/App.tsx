@@ -1209,16 +1209,23 @@ export default function App() {
       ].map(escapeCSV).join(',');
     });
 
-    const csv = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    // CSV yang kompatibel dengan Excel/Google Sheets di desktop maupun Android.
+    // BOM + CRLF + trailing newline membantu beberapa viewer mobile mengenali seluruh isi.
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows].join('\r\n') + '\r\n';
+    const csv = '\uFEFF' + csvContent;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}.csv`;
+    link.download = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}_${new Date().getTime()}.csv`;
+    link.style.display = 'none';
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
   const executePrint = () => {
@@ -1971,27 +1978,77 @@ export default function App() {
     });
 
     return (
-      <div className="min-h-screen bg-[#F1F5F9] font-sans p-0 md:p-6 flex justify-center print:p-0 print:bg-white">
+      <div className="preview-page min-h-screen bg-[#F1F5F9] font-sans p-0 md:p-6 flex justify-center print:p-0 print:bg-white">
         <style dangerouslySetInnerHTML={{__html: `
           .money-inline { display:inline-flex; align-items:baseline; gap:4px; white-space:nowrap; }
           .money-inline > span:first-child { flex:0 0 auto; }
           .money-inline > span:last-child { flex:0 0 auto; }
+          .money-currency { display:inline !important; white-space:nowrap !important; }
           .report-screen { display:block; }
           .report-print-only { display:none; }
-          .preview-table-wrap { overflow-x:auto; }
-          .preview-table { width:100%; min-width:900px; table-layout:fixed; border-collapse:collapse; }
+          .preview-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+          .preview-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
           .preview-table th, .preview-table td { padding:10px 8px; vertical-align:top; }
           .preview-table .money-cell { white-space:nowrap; }
+          .preview-toolbar { box-sizing:border-box; }
           @media (max-width: 767px) {
-            .preview-sheet { border-radius:0 !important; box-shadow:none !important; border:0 !important; width:100% !important; }
-            .preview-toolbar { position:sticky !important; top:0 !important; border-radius:0 !important; }
-            .preview-header { flex-direction:column !important; align-items:flex-start !important; gap:12px !important; }
-            .preview-header-meta { width:100% !important; text-align:left !important; }
-            .preview-summary { grid-template-columns:1fr 1fr !important; }
+            html, body, #root { width:100% !important; max-width:100% !important; overflow-x:hidden !important; }
+            .preview-page { width:100% !important; max-width:100% !important; min-width:0 !important; overflow-x:hidden !important; }
+            .preview-sheet {
+              width:100% !important;
+              max-width:100% !important;
+              min-width:0 !important;
+              margin:0 !important;
+              padding:16px !important;
+              border-radius:0 !important;
+              box-shadow:none !important;
+              border:0 !important;
+              box-sizing:border-box !important;
+            }
+            .preview-toolbar {
+              position:sticky !important;
+              top:0 !important;
+              left:auto !important;
+              right:auto !important;
+              width:100% !important;
+              max-width:none !important;
+              margin:0 !important;
+              border-radius:0 !important;
+              box-sizing:border-box !important;
+              z-index:50 !important;
+            }
+            .preview-header {
+              display:flex !important;
+              flex-direction:column !important;
+              align-items:stretch !important;
+              gap:12px !important;
+              width:100% !important;
+              box-sizing:border-box !important;
+            }
+            .preview-header h1 { font-size:2rem !important; letter-spacing:.12em !important; }
+            .preview-header p { font-size:.75rem !important; letter-spacing:.08em !important; }
+            .preview-header-meta {
+              width:100% !important;
+              box-sizing:border-box !important;
+              text-align:left !important;
+            }
+            .preview-summary {
+              display:grid !important;
+              grid-template-columns:1fr 1fr !important;
+              gap:10px !important;
+            }
+            .preview-summary-card { min-width:0 !important; box-sizing:border-box !important; }
+            .preview-summary-card .money-inline { font-size:1rem !important; }
+            .report-screen { width:100% !important; min-width:0 !important; }
+            .report-screen > .md\\:hidden { display:block !important; width:100% !important; }
+            .report-print-only { display:none !important; }
           }
           @media print {
-            body { background:#fff !important; margin:0 !important; padding:0 !important; }
+            html, body, #root { background:#fff !important; margin:0 !important; padding:0 !important; overflow:visible !important; width:100% !important; }
+            body { background:#fff !important; }
             .print-hidden { display:none !important; }
+            .preview-toolbar { display:none !important; }
+            .preview-page { display:block !important; width:100% !important; min-width:0 !important; overflow:visible !important; }
             .report-screen { display:none !important; }
             .report-print-only { display:block !important; }
             .preview-sheet { width:100% !important; max-width:none !important; margin:0 !important; padding:8mm !important; border:0 !important; box-shadow:none !important; }
@@ -2018,7 +2075,7 @@ export default function App() {
           }
         `}} />
 
-        <div className="preview-toolbar fixed top-3 left-3 right-3 md:left-auto md:right-auto md:w-[calc(100%-24px)] md:max-w-5xl bg-[#172033] text-white p-3 md:p-4 rounded-2xl shadow-2xl z-50 print-hidden flex items-center justify-between gap-3">
+        <div className="preview-toolbar bg-[#172033] text-white p-3 md:p-4 rounded-2xl shadow-2xl z-50 print-hidden flex items-center justify-between gap-3">
           <h2 className="font-black flex items-center gap-2 text-[#D4A72C] text-sm md:text-base"><Eye size={18}/> Preview Cetak</h2>
           <div className="flex gap-2">
             <button onClick={() => setShowPreview(false)} className="px-3 md:px-4 py-2 bg-transparent border border-white text-white rounded-lg font-bold text-xs md:text-sm">Tutup</button>
@@ -2096,7 +2153,7 @@ export default function App() {
               </table>
             </div>
 
-            <div className="md:hidden space-y-3">
+            <div className="md:hidden block w-full space-y-3">
               {rowsWithBalance.length === 0 ? <div className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</div> : rowsWithBalance.map(t => {
                 const {src, dest} = getAccountNames(t);
                 const isTransfer = t.type === 'transfer';
