@@ -358,13 +358,14 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
               <th className="p-3 font-bold">Akun</th>
               <th className="p-3 font-bold text-right">Pemasukan</th>
               <th className="p-3 font-bold text-right">Pengeluaran</th>
+              <th className="p-3 font-bold text-right">Transfer</th>
               <th className="p-3 font-bold text-right border-l border-[#E2E8F0] print:border-slate-400">Saldo</th>
               {!showPreview && <th className="p-3 font-bold text-center w-12 print-hidden">Aksi</th>}
             </tr>
           </thead>
           <tbody>
             {calcData.length === 0 ? (
-              <tr><td colSpan="8" className="p-8 text-center text-[#64748B] italic print:text-black">Belum ada transaksi.</td></tr>
+              <tr><td colSpan="9" className="p-8 text-center text-[#64748B] italic print:text-black">Belum ada transaksi.</td></tr>
             ) : (
               calcData.map(t => {
                  const isTransfer = t.type === 'transfer';
@@ -382,10 +383,13 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                       {t.type === 'income' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
                     </td>
                     <td className="p-3 text-sm font-black text-[#DC2626] text-right align-top print:text-slate-900">
-                      {(t.type === 'expense' || t.type === 'transfer') ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                      {t.type === 'expense' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                    </td>
+                    <td className="p-3 text-sm font-black text-[#4F46E5] text-right align-top print:text-slate-900">
+                      {isTransfer ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
                     </td>
                     <td className="p-3 text-sm font-bold text-[#172033] text-right align-top border-l border-[#E2E8F0] bg-[#F7F8FA]/50 print:bg-transparent print:border-slate-300 print:text-slate-900">
-                      {isTransfer ? 'Mutasi' : `Rp ${t.runBal.toLocaleString('id-ID')}`}
+                      {`Rp ${t.runBal.toLocaleString('id-ID')}`}
                     </td>
                     {!showPreview && (
                       <td className="p-3 text-center align-top print-hidden">
@@ -419,7 +423,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`font-black text-sm ${isIncome ? 'text-[#16A34A]' : isTransfer ? 'text-[#4F46E5]' : 'text-[#DC2626]'}`}>
-                        {isIncome ? '+' : '-' } Rp {t.amount.toLocaleString('id-ID')}
+                        {isIncome ? '+' : isTransfer ? '↔' : '-'} Rp {t.amount.toLocaleString('id-ID')}
                       </p>
                     </div>
                   </div>
@@ -1026,21 +1030,18 @@ export default function App() {
   }, [transactions, reportPeriod, customDates]);
 
   const summary = useMemo(() => {
-    let income = 0; let expense = 0; let savings = 0;
+    let income = 0; let expense = 0; let transfer = 0;
     const sourceTxs = activeTab === 'dashboard' 
       ? transactions.filter(t => new Date(t.timestamp).getMonth() === new Date().getMonth() && new Date(t.timestamp).getFullYear() === new Date().getFullYear()) 
       : filteredTransactions;
     
     sourceTxs.forEach(t => {
-       if (t.type === 'income') income += t.amount;
-       if (t.type === 'expense') expense += t.amount;
-       if (t.type === 'transfer') {
-          const targetAcc = accounts.find(a => a.id === t.toAccountId);
-          if(targetAcc && targetAcc.type === 'Tabungan') savings += t.amount;
-       }
+       if (t.type === 'income') income += Number(t.amount) || 0;
+       if (t.type === 'expense') expense += Number(t.amount) || 0;
+       if (t.type === 'transfer') transfer += Number(t.amount) || 0;
     });
-    return { income, expense, savings, netWorth };
-  }, [transactions, filteredTransactions, activeTab, accounts, netWorth]);
+    return { income, expense, transfer, netWorth };
+  }, [transactions, filteredTransactions, activeTab, netWorth]);
 
   const expenseChartData = useMemo(() => {
     const source = activeTab === 'reports' ? filteredTransactions : transactions.filter(t => new Date(t.timestamp).getMonth() === new Date().getMonth());
@@ -1152,6 +1153,7 @@ export default function App() {
       "Akun Tujuan",
       "Pemasukan (Rp)",
       "Pengeluaran (Rp)",
+      "Transfer (Rp)",
       "Saldo Bersih Setelah Transaksi (Rp)"
     ];
 
@@ -1178,9 +1180,10 @@ export default function App() {
       const srcAcc = accounts.find(a => a.id === t.accountId)?.name || '-';
       const destAcc = accounts.find(a => a.id === t.toAccountId)?.name || '-';
       const income = t.type === 'income' ? Number(t.amount) || 0 : 0;
-      const expense = (t.type === 'expense' || t.type === 'transfer') ? Number(t.amount) || 0 : 0;
+      const expense = t.type === 'expense' ? Number(t.amount) || 0 : 0;
+      const transfer = t.type === 'transfer' ? Number(t.amount) || 0 : 0;
 
-      // Transfer hanya memindahkan uang antar akun, sehingga tidak mengubah saldo bersih.
+      // Transfer hanya memindahkan uang antar akun, sehingga tidak menambah/mengurangi saldo bersih.
       if (t.type === 'income') runningBalance += income;
       if (t.type === 'expense') runningBalance -= expense;
 
@@ -1194,6 +1197,7 @@ export default function App() {
         escapeCSV(destAcc),
         income,
         expense,
+        transfer,
         runningBalance
       ].join(',');
     });
@@ -1420,8 +1424,8 @@ export default function App() {
              <h2 className="text-xl font-black text-[#DC2626] break-words">Rp {summary.expense.toLocaleString('id-ID')}</h2>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
-             <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Transfer/Nabung ({reportPeriod})</p>
-             <h2 className="text-xl font-black text-[#4F46E5] break-words">Rp {summary.savings.toLocaleString('id-ID')}</h2>
+             <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Transfer ({reportPeriod})</p>
+             <h2 className="text-xl font-black text-[#4F46E5] break-words">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
           </div>
           <div className="bg-[#172033] p-4 rounded-2xl shadow-sm border border-[#0F172A]">
              <p className="text-[10px] text-[#D4A72C] font-bold uppercase mb-1">Total Kekayaan (Semua Waktu)</p>
@@ -1431,7 +1435,8 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
            <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#E2E8F0] flex flex-col justify-center">
-              <h3 className="font-bold text-[#172033] mb-6 flex items-center gap-2"><BarChart3 size={18} className="text-[#D4A72C]"/> Pemasukan vs Pengeluaran</h3>
+              <h3 className="font-bold text-[#172033] mb-2 flex items-center gap-2"><BarChart3 size={18} className="text-[#D4A72C]"/> Pemasukan vs Pengeluaran</h3>
+              <p className="text-[11px] text-[#64748B] mb-6">Transfer tidak dihitung sebagai pemasukan atau pengeluaran karena hanya memindahkan dana antar akun.</p>
               <div className="space-y-6">
                 <div>
                    <div className="flex justify-between text-xs font-bold mb-1">
@@ -2005,8 +2010,8 @@ export default function App() {
                <h2 className="text-xl font-black text-[#DC2626]">Rp {summary.expense.toLocaleString('id-ID')}</h2>
              </div>
              <div className="border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-               <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Tabungan</p>
-               <h2 className="text-xl font-black text-[#4F46E5]">Rp {summary.savings.toLocaleString('id-ID')}</h2>
+               <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
+               <h2 className="text-xl font-black text-[#4F46E5]">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
              </div>
              <div className="border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white print:border-4 print:border-[#172033] print:bg-white print:text-[#172033]">
                <p className="text-[10px] font-bold uppercase text-[#D4A72C] print:text-[#64748B] mb-1">Kekayaan Bersih (Total)</p>
