@@ -438,7 +438,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                   <p className="text-sm font-bold text-[#172033] break-words">{isTransfer ? `${accName} → ${toAccName}` : accName}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 w-full min-w-0">
                   {isTransfer ? (
                     <div className="col-span-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
                       <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">Transfer</p>
@@ -604,7 +604,7 @@ const AddRecurringModal = ({ accounts, onClose, onSave }) => {
               <button type="button" onClick={()=>setType('expense')} className={`flex-1 p-2 rounded-lg font-bold text-sm ${type==='expense'?'bg-[#DC2626] text-white':'bg-[#F7F8FA] border border-[#CBD5E1] text-[#475569]'}`}>Pengeluaran</button>
               <button type="button" onClick={()=>setType('income')} className={`flex-1 p-2 rounded-lg font-bold text-sm ${type==='income'?'bg-[#16A34A] text-white':'bg-[#F7F8FA] border border-[#CBD5E1] text-[#475569]'}`}>Pemasukan</button>
            </div>
-           <div className="grid grid-cols-2 gap-2">
+           <div className="grid grid-cols-2 gap-2 w-full min-w-0">
              <div>
                <label className="block text-[10px] font-bold text-[#475569] uppercase mb-1">Kategori</label>
                <select value={cat} onChange={e=>setCat(e.target.value)} className="w-full p-2 bg-[#F7F8FA] border border-[#CBD5E1] rounded-xl focus:border-[#D4A72C] focus:ring-1 focus:ring-[#D4A72C] font-bold outline-none text-sm">
@@ -627,7 +627,7 @@ const AddRecurringModal = ({ accounts, onClose, onSave }) => {
              <label className="block text-[10px] font-bold text-[#475569] uppercase mb-1">Nominal (Rp)</label>
              <input type="number" min="1" required value={amt} onChange={e=>setAmt(e.target.value)} placeholder="0" className="w-full p-3 bg-[#F7F8FA] border border-[#CBD5E1] rounded-xl focus:border-[#D4A72C] focus:ring-1 focus:ring-[#D4A72C] font-bold outline-none text-xl" />
            </div>
-           <div className="grid grid-cols-2 gap-2">
+           <div className="grid grid-cols-2 gap-2 w-full min-w-0">
              <div>
                <label className="block text-[10px] font-bold text-[#475569] uppercase mb-1">Frekuensi</label>
                <select value={freq} onChange={e=>setFreq(e.target.value)} className="w-full p-2 bg-[#F7F8FA] border border-[#CBD5E1] rounded-xl focus:border-[#D4A72C] focus:ring-1 focus:ring-[#D4A72C] font-bold outline-none text-sm">
@@ -1978,7 +1978,7 @@ export default function App() {
     });
 
     return (
-      <div className="preview-page min-h-screen bg-[#F1F5F9] font-sans p-0 md:p-6 flex justify-center print:p-0 print:bg-white">
+      <div className="preview-page min-h-screen bg-[#F1F5F9] font-sans p-0 md:p-6 print:p-0 print:bg-white">
         <style dangerouslySetInnerHTML={{__html: `
           .money-inline { display:inline-flex; align-items:baseline; gap:4px; white-space:nowrap; }
           .money-inline > span:first-child { flex:0 0 auto; }
@@ -1986,14 +1986,17 @@ export default function App() {
           .money-currency { display:inline !important; white-space:nowrap !important; }
           .report-screen { display:block; }
           .report-print-only { display:none; }
-          .preview-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+          .preview-table-wrap { overflow:hidden; }
           .preview-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
-          .preview-table th, .preview-table td { padding:10px 8px; vertical-align:top; }
+          .preview-table th, .preview-table td { padding:8px 7px; vertical-align:top; font-size:12px; line-height:1.25; overflow-wrap:anywhere; word-break:break-word; }
           .preview-table .money-cell { white-space:nowrap; }
-          .preview-toolbar { box-sizing:border-box; }
+          .preview-toolbar { box-sizing:border-box; width:min(1280px, calc(100% - 32px)); margin:16px auto 0; }
+          .preview-sheet { width:min(1120px, calc(100% - 32px)); max-width:none; margin:16px auto 24px; box-sizing:border-box; }
+          .preview-screen-table { width:100%; table-layout:fixed; }
+          .preview-screen-table th, .preview-screen-table td { overflow-wrap:anywhere; word-break:break-word; }
           @media (max-width: 767px) {
             html, body, #root { width:100% !important; max-width:100% !important; overflow-x:hidden !important; }
-            .preview-page { width:100% !important; max-width:100% !important; min-width:0 !important; overflow-x:hidden !important; }
+            .preview-page { width:100% !important; max-width:100% !important; min-width:0 !important; overflow-x:hidden !important; display:block !important; }
             .preview-sheet {
               width:100% !important;
               max-width:100% !important;
@@ -2051,7 +2054,7 @@ export default function App() {
             .preview-page { display:block !important; width:100% !important; min-width:0 !important; overflow:visible !important; }
             .report-screen { display:none !important; }
             .report-print-only { display:block !important; }
-            .preview-sheet { width:100% !important; max-width:none !important; margin:0 !important; padding:8mm !important; border:0 !important; box-shadow:none !important; }
+            .preview-sheet { width:100% !important; max-width:none !important; margin:0 !important; padding:12mm 8mm 8mm !important; border:0 !important; box-shadow:none !important; }
             .preview-header { display:flex !important; flex-direction:row !important; justify-content:space-between !important; align-items:flex-end !important; gap:12px !important; }
             .preview-summary { display:grid !important; grid-template-columns:repeat(4, 1fr) !important; gap:8px !important; }
             .preview-summary-card { padding:9px !important; }
@@ -2167,12 +2170,12 @@ export default function App() {
                     <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">Akun</p>
                     <p className="font-bold text-sm break-words">{isTransfer ? `${src} → ${dest}` : src}</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className={`rounded-xl p-3 border ${isTransfer ? 'bg-indigo-50 border-indigo-100' : isIncome ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                  <div className="grid grid-cols-2 gap-2 w-full min-w-0">
+                    <div className={`min-w-0 rounded-xl p-3 border ${isTransfer ? 'bg-indigo-50 border-indigo-100' : isIncome ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
                       <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">{isTransfer ? 'Transfer' : isIncome ? 'Pemasukan' : 'Pengeluaran'}</p>
                       <Money value={t.amount} className={`${isTransfer ? 'text-[#4F46E5]' : isIncome ? 'text-[#16A34A]' : 'text-[#DC2626]'} font-black text-base`} />
                     </div>
-                    <div className="rounded-xl p-3 border border-[#E2E8F0] bg-white">
+                    <div className="min-w-0 rounded-xl p-3 border border-[#E2E8F0] bg-white">
                       <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Saldo</p>
                       {isTransfer ? <span className="text-sm font-black text-[#64748B]">Mutasi</span> : <Money value={t.runBal} className="font-black text-base text-[#172033]" />}
                     </div>
@@ -2183,7 +2186,7 @@ export default function App() {
           </div>
 
           <div className="report-print-only border-2 border-[#172033] rounded-xl overflow-hidden">
-            <table className="preview-table bg-white">
+            <table className="preview-table preview-screen-table bg-white">
               <colgroup>
                 <col style={{width:'10%'}}/><col style={{width:'15%'}}/><col style={{width:'12%'}}/><col style={{width:'20%'}}/>
                 <col style={{width:'12%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'9%'}}/>
