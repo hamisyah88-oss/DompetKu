@@ -768,6 +768,22 @@ export default function App() {
 
     const boot = async () => {
       try {
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, '')
+        );
+        const searchParams = new URLSearchParams(window.location.search);
+
+        const isRecovery =
+          hashParams.get('type') === 'recovery' ||
+          searchParams.get('recovery') === '1';
+
+        if (isRecovery) {
+          setAuthMode('reset');
+          setAuthError('');
+          setAppState('auth');
+          return;
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           await hydrateSession(session);
@@ -800,7 +816,17 @@ export default function App() {
         setAppState('auth');
       }
       if (event === 'SIGNED_IN' && session && appState === 'loading') {
-        void hydrateSession(session);
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, '')
+        );
+        const searchParams = new URLSearchParams(window.location.search);
+        const isRecovery =
+          hashParams.get('type') === 'recovery' ||
+          searchParams.get('recovery') === '1';
+
+        if (!isRecovery) {
+          void hydrateSession(session);
+        }
       }
     });
 
@@ -865,7 +891,7 @@ export default function App() {
 
       if (authMode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin
+          redirectTo: `${window.location.origin}/?recovery=1`
         });
         if (error) throw error;
 
