@@ -335,6 +335,29 @@ const UserAvatar = ({ user, size = 10, textClass = "text-xl" }) => {
   );
 };
 
+
+const MoneyStack = ({ amount, color = 'text-[#172033]', size = 'md', align = 'right', className = '' }) => {
+  const sizeMap = {
+    sm: { currency: 'text-[10px]', value: 'text-sm' },
+    md: { currency: 'text-[10px]', value: 'text-lg' },
+    lg: { currency: 'text-xs', value: 'text-2xl' },
+    xl: { currency: 'text-sm', value: 'text-3xl' }
+  };
+  const sizes = sizeMap[size] || sizeMap.md;
+  return (
+    <span className={`inline-flex flex-col ${align === 'left' ? 'items-start' : align === 'center' ? 'items-center' : 'items-end'} leading-none ${color} ${className}`}>
+      <span className={`${sizes.currency} font-bold opacity-80`}>Rp</span>
+      <span className={`${sizes.value} font-black mt-0.5 tracking-tight whitespace-nowrap`}>{Number(amount || 0).toLocaleString('id-ID')}</span>
+    </span>
+  );
+};
+
+const MoneyDash = ({ amount, color = 'text-[#172033]', size = 'md', align = 'right', dash = '-' }) => {
+  if (amount === null || amount === undefined) return null;
+  if (Number(amount) === 0) return <span className={`${color} font-black`}>{dash}</span>;
+  return <MoneyStack amount={amount} color={color} size={size} align={align} />;
+};
+
 const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
   const initialTotal = accounts.reduce((total, account) => total + (Number(account.initialBalance) || 0), 0);
   let runBal = initialTotal;
@@ -349,7 +372,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
   return (
     <>
       <div className={`${showPreview ? "block" : "hidden md:block"} overflow-x-auto print:overflow-visible`}>
-        <table className="w-full text-left border-collapse bg-white">
+        <table className="w-full text-left border-collapse bg-white min-w-[980px]">
           <thead>
             <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A] print:bg-slate-200 print:text-slate-900 print:border-slate-800">
               <th className="p-3 font-bold w-28">Tanggal</th>
@@ -379,17 +402,17 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                     <td className="p-3 text-xs font-bold align-top print:text-slate-800">
                       {isTransfer ? <span className="text-[#4F46E5] print:text-slate-900">{accName} → {toAccName}</span> : <span className="text-[#475569] print:text-slate-800">{accName}</span>}
                     </td>
-                    <td className="p-3 text-sm font-black text-[#16A34A] text-right align-top print:text-slate-900">
-                      {t.type === 'income' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                    <td className="p-3 text-right align-top min-w-[92px]">
+                      <MoneyDash amount={t.type === 'income' ? t.amount : 0} color="text-[#16A34A]" size="sm" />
                     </td>
-                    <td className="p-3 text-sm font-black text-[#DC2626] text-right align-top print:text-slate-900">
-                      {t.type === 'expense' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                    <td className="p-3 text-right align-top min-w-[92px]">
+                      <MoneyDash amount={t.type === 'expense' ? t.amount : 0} color="text-[#DC2626]" size="sm" />
                     </td>
-                    <td className="p-3 text-sm font-black text-[#4F46E5] text-right align-top print:text-slate-900">
-                      {isTransfer ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                    <td className="p-3 text-right align-top min-w-[92px]">
+                      <MoneyDash amount={isTransfer ? t.amount : 0} color="text-[#4F46E5]" size="sm" />
                     </td>
-                    <td className="p-3 text-sm font-bold text-[#172033] text-right align-top border-l border-[#E2E8F0] bg-[#F7F8FA]/50 print:bg-transparent print:border-slate-300 print:text-slate-900">
-                      {`Rp ${t.runBal.toLocaleString('id-ID')}`}
+                    <td className="p-3 text-right align-top border-l border-[#E2E8F0] bg-[#F7F8FA]/50 min-w-[96px]">
+                      <MoneyStack amount={t.runBal} color="text-[#172033]" size="sm" />
                     </td>
                     {!showPreview && (
                       <td className="p-3 text-center align-top print-hidden">
@@ -1257,15 +1280,18 @@ export default function App() {
             <Landmark size={120} className="text-[#D4A72C]"/>
          </div>
          <p className="text-[#D4A72C] text-xs font-bold uppercase tracking-widest mb-1 relative z-10">Total Kekayaan Bersih</p>
-         <h2 className="text-3xl md:text-4xl font-black text-white relative z-10 mb-6 drop-shadow-md break-all">Rp {summary.netWorth.toLocaleString('id-ID')}</h2>
+         <div className="relative z-10 mb-6 text-white">
+           <span className="block text-sm md:text-base font-bold opacity-80">Rp</span>
+           <span className="block text-3xl md:text-4xl font-black tracking-tight">{summary.netWorth.toLocaleString('id-ID')}</span>
+         </div>
          <div className="grid grid-cols-2 gap-4 relative z-10 border-t border-[#0F172A] pt-5">
             <div>
                <p className="text-[#94A3B8] text-[10px] font-bold uppercase flex items-center gap-1"><TrendingUp size={12} className="text-[#16A34A]"/> Pemasukan Bulan Ini</p>
-               <p className="text-[#16A34A] font-bold text-lg mt-1 break-all">Rp {summary.income.toLocaleString('id-ID')}</p>
+               <MoneyStack amount={summary.income} color="text-[#16A34A]" size="md" align="left" className="mt-1" />
             </div>
             <div>
                <p className="text-[#94A3B8] text-[10px] font-bold uppercase flex items-center gap-1"><TrendingDown size={12} className="text-[#DC2626]"/> Pengeluaran Bulan Ini</p>
-               <p className="text-[#DC2626] font-bold text-lg mt-1 break-all">Rp {summary.expense.toLocaleString('id-ID')}</p>
+               <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="md" align="left" className="mt-1" />
             </div>
          </div>
       </div>
@@ -1280,9 +1306,7 @@ export default function App() {
                    <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1 bg-[#F7F8FA] px-2 py-0.5 rounded-full inline-block border border-[#CBD5E1]">{acc.type}</p>
                    <p className="font-bold text-[#172033] line-clamp-1 mb-2 leading-tight">{acc.name}</p>
                  </div>
-                 <p className="font-black text-[#B8860B] truncate" title={`Rp ${(accountBalances[acc.id] || 0).toLocaleString('id-ID')}`}>
-                   Rp {(accountBalances[acc.id] || 0).toLocaleString('id-ID')}
-                 </p>
+                 <MoneyStack amount={accountBalances[acc.id] || 0} color="text-[#B8860B]" size="md" align="left" className="mt-2" />
               </div>
             ))}
             <button onClick={() => setShowAddAccount(true)} className="min-w-[140px] border-2 border-dashed border-[#CBD5E1] rounded-2xl flex flex-col items-center justify-center text-[#64748B] bg-[#F7F8FA] hover:bg-white transition snap-start shrink-0 active:scale-95 group">
@@ -1417,19 +1441,19 @@ export default function App() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
              <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Pemasukan ({reportPeriod})</p>
-             <h2 className="text-xl font-black text-[#16A34A] break-words">Rp {summary.income.toLocaleString('id-ID')}</h2>
+             <MoneyStack amount={summary.income} color="text-[#16A34A]" size="lg" align="left" className="mt-2" />
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
              <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Pengeluaran ({reportPeriod})</p>
-             <h2 className="text-xl font-black text-[#DC2626] break-words">Rp {summary.expense.toLocaleString('id-ID')}</h2>
+             <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="lg" align="left" className="mt-2" />
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
              <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Transfer ({reportPeriod})</p>
-             <h2 className="text-xl font-black text-[#4F46E5] break-words">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
+             <MoneyStack amount={summary.transfer} color="text-[#4F46E5]" size="lg" align="left" className="mt-2" />
           </div>
           <div className="bg-[#172033] p-4 rounded-2xl shadow-sm border border-[#0F172A]">
              <p className="text-[10px] text-[#D4A72C] font-bold uppercase mb-1">Total Kekayaan (Semua Waktu)</p>
-             <h2 className="text-xl font-black text-white break-words">Rp {summary.netWorth.toLocaleString('id-ID')}</h2>
+             <MoneyStack amount={summary.netWorth} color="text-white" size="lg" align="left" className="mt-2" />
           </div>
         </div>
 
@@ -1441,14 +1465,14 @@ export default function App() {
                 <div>
                    <div className="flex justify-between text-xs font-bold mb-1">
                      <span className="text-[#64748B]">PEMASUKAN</span>
-                     <span className="text-[#16A34A]">Rp {incomeTotal.toLocaleString('id-ID')}</span>
+                     <MoneyStack amount={incomeTotal} color="text-[#16A34A]" size="sm" align="right" />
                    </div>
                    <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-4"><div className="bg-[#16A34A] h-full rounded-full" style={{width:`${incPct}%`}}></div></div>
                 </div>
                 <div>
                    <div className="flex justify-between text-xs font-bold mb-1">
                      <span className="text-[#64748B]">PENGELUARAN</span>
-                     <span className="text-[#DC2626]">Rp {expenseTotal.toLocaleString('id-ID')}</span>
+                     <MoneyStack amount={expenseTotal} color="text-[#DC2626]" size="sm" align="right" />
                    </div>
                    <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-4"><div className="bg-[#DC2626] h-full rounded-full" style={{width:`${expPct}%`}}></div></div>
                 </div>
@@ -2114,6 +2138,27 @@ export default function App() {
               margin-bottom: 5mm !important;
               padding-bottom: 4mm !important;
             }
+
+            .preview-mobile-only { display: none !important; }
+            .preview-desktop-only { display: table !important; }
+          }
+
+          .preview-mobile-only { display: none; }
+          .preview-desktop-only { display: table; }
+
+          @media (max-width: 767px) {
+            .dompetku-print-page { padding: 0 !important; display: block !important; }
+            .dompetku-print-sheet { margin-top: 76px !important; padding: 18px !important; border-radius: 0 !important; box-shadow: none !important; max-width: 100% !important; }
+            .print-header { align-items: stretch !important; }
+            .print-header > div:first-child { flex-direction: column !important; align-items: flex-start !important; }
+            .print-header .text-right { width: 100% !important; text-align: left !important; }
+            .print-header h1 { font-size: 28px !important; }
+            .print-header p { font-size: 11px !important; line-height: 1.25 !important; }
+            .print-summary h3, .print-ledger > h3 { font-size: 16px !important; }
+            .print-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+            .print-card { padding: 12px !important; min-width: 0 !important; }
+            .preview-desktop-only { display: none !important; }
+            .preview-mobile-only { display: block !important; }
           }
         `}} />
 
@@ -2143,7 +2188,7 @@ export default function App() {
             id="dompetku-report"
             className="dompetku-print-sheet bg-white w-full max-w-4xl shadow-lg mt-20 p-8 md:p-12 border border-[#E2E8F0] rounded-xl"
           >
-            <div className="print-header border-b-4 border-[#172033] pb-5 mb-6 flex justify-between items-end gap-6">
+            <div className="print-header border-b-4 border-[#172033] pb-5 mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
               <div className="flex items-center gap-4 min-w-0">
                 <UserAvatar user={user} size={16} textClass="text-2xl" />
                 <div className="min-w-0">
@@ -2165,22 +2210,22 @@ export default function App() {
               <div className="print-card-grid grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
                   <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pemasukan</p>
-                  <h2 className="text-xl font-black text-[#16A34A]">Rp {summary.income.toLocaleString('id-ID')}</h2>
+                  <MoneyStack amount={summary.income} color="text-[#16A34A]" size="lg" align="left" className="mt-1" />
                 </div>
 
                 <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
                   <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pengeluaran</p>
-                  <h2 className="text-xl font-black text-[#DC2626]">Rp {summary.expense.toLocaleString('id-ID')}</h2>
+                  <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="lg" align="left" className="mt-1" />
                 </div>
 
                 <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
                   <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
-                  <h2 className="text-xl font-black text-[#4F46E5]">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
+                  <MoneyStack amount={summary.transfer} color="text-[#4F46E5]" size="lg" align="left" className="mt-1" />
                 </div>
 
                 <div className="print-card border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white">
                   <p className="text-[10px] font-bold uppercase text-[#D4A72C] mb-1">Kekayaan Bersih (Total)</p>
-                  <h2 className="text-xl font-black">Rp {summary.netWorth.toLocaleString('id-ID')}</h2>
+                  <MoneyStack amount={summary.netWorth} color="text-white" size="lg" align="left" className="mt-1" />
                 </div>
               </div>
             </section>
@@ -2195,7 +2240,40 @@ export default function App() {
                   </h3>
                 </div>
 
-                <table className="print-ledger-table w-full text-left bg-white">
+                <div className="preview-mobile-only p-3 space-y-3">
+                  {printRowsWithBalance.length === 0 ? (
+                    <div className="text-center text-[#64748B] italic py-6">Belum ada transaksi pada periode ini.</div>
+                  ) : (
+                    printRowsWithBalance.map((t) => (
+                      <div key={`mobile-${t.id}`} className="rounded-xl border border-[#CBD5E1] bg-white p-4 shadow-sm">
+                        <div>
+                          <p className="text-[11px] font-bold text-[#64748B]">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</p>
+                          <p className="text-base font-black text-[#172033] mt-1 break-words">{t.note}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] border border-[#E2E8F0] text-[#64748B]">{t.category || 'Lainnya'}</span>
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] border border-[#E2E8F0] text-[#64748B]">{t.isTransfer ? 'Transfer' : t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-[#E2E8F0] grid grid-cols-2 gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] uppercase font-bold text-[#64748B]">Akun</p>
+                            <p className="text-xs font-bold text-[#172033] mt-1 break-words">{t.isTransfer ? `${t.accountName} → ${t.destinationName}` : t.accountName}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase font-bold text-[#64748B]">Nilai</p>
+                            <MoneyDash amount={t.amount} color={t.isTransfer ? 'text-[#4F46E5]' : t.type === 'income' ? 'text-[#16A34A]' : 'text-[#DC2626]'} size="sm" />
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-[#E2E8F0] flex items-end justify-between gap-3">
+                          <span className="text-[10px] uppercase font-bold text-[#64748B]">Saldo setelah transaksi</span>
+                          <MoneyStack amount={t.printBalance} color="text-[#172033]" size="sm" />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <table className="print-ledger-table preview-desktop-only w-full text-left bg-white">
                   <thead>
                     <tr className="bg-[#F7F8FA] text-[#172033] border-b-2 border-[#172033]">
                       <th className="font-bold">Tanggal</th>
@@ -2228,16 +2306,16 @@ export default function App() {
                             {t.isTransfer ? `${t.accountName} → ${t.destinationName}` : t.accountName}
                           </td>
                           <td className="text-right font-bold text-[#16A34A]">
-                            {t.type === 'income' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                            <MoneyDash amount={t.type === 'income' ? t.amount : 0} color="text-[#16A34A]" size="sm" />
                           </td>
                           <td className="text-right font-bold text-[#DC2626]">
-                            {t.type === 'expense' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                            <MoneyDash amount={t.type === 'expense' ? t.amount : 0} color="text-[#DC2626]" size="sm" />
                           </td>
                           <td className="text-right font-bold text-[#4F46E5]">
-                            {t.isTransfer ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                            <MoneyDash amount={t.isTransfer ? t.amount : 0} color="text-[#4F46E5]" size="sm" />
                           </td>
                           <td className="text-right font-bold text-[#172033]">
-                            Rp {t.printBalance.toLocaleString('id-ID')}
+                            <MoneyStack amount={t.printBalance} color="text-[#172033]" size="sm" />
                           </td>
                         </tr>
                       ))
