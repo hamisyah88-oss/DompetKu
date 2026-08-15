@@ -740,9 +740,24 @@ export default function App() {
     injectPWA();
 
     let mounted = true;
+    const recoveryModeRef = { current: false };
+
+    const detectRecoveryFlow = () => {
+      const hashParams = new URLSearchParams(
+        window.location.hash.replace(/^#/, '')
+      );
+      const searchParams = new URLSearchParams(window.location.search);
+      return (
+        hashParams.get('type') === 'recovery' ||
+        searchParams.get('type') === 'recovery' ||
+        searchParams.get('recovery') === '1'
+      );
+    };
+
+    recoveryModeRef.current = detectRecoveryFlow();
 
     const hydrateSession = async (session) => {
-      if (!session?.user || !mounted) return;
+      if (!session?.user || !mounted || recoveryModeRef.current) return;
       try {
         const data = await loadCloudUserData(session.user);
         if (!mounted) return;
@@ -768,16 +783,8 @@ export default function App() {
 
     const boot = async () => {
       try {
-        const hashParams = new URLSearchParams(
-          window.location.hash.replace(/^#/, '')
-        );
-        const searchParams = new URLSearchParams(window.location.search);
-
-        const isRecovery =
-          hashParams.get('type') === 'recovery' ||
-          searchParams.get('recovery') === '1';
-
-        if (isRecovery) {
+        if (detectRecoveryFlow()) {
+          recoveryModeRef.current = true;
           setAuthMode('reset');
           setAuthError('');
           setAppState('auth');
@@ -785,6 +792,8 @@ export default function App() {
         }
 
         const { data: { session } } = await supabase.auth.getSession();
+        if (recoveryModeRef.current) return;
+
         if (session) {
           await hydrateSession(session);
         } else {
@@ -811,20 +820,20 @@ export default function App() {
         setAuthMode('login');
       }
       if (event === 'PASSWORD_RECOVERY') {
-        setAuthMode('reset');
+        recoveryModeRef.current = true;
+        setAuthPin('');
+        setAuthConfirmPin('');
         setAuthError('');
+        setAuthMode('reset');
         setAppState('auth');
       }
       if (event === 'SIGNED_IN' && session && appState === 'loading') {
-        const hashParams = new URLSearchParams(
-          window.location.hash.replace(/^#/, '')
-        );
-        const searchParams = new URLSearchParams(window.location.search);
-        const isRecovery =
-          hashParams.get('type') === 'recovery' ||
-          searchParams.get('recovery') === '1';
-
-        if (!isRecovery) {
+        if (recoveryModeRef.current || detectRecoveryFlow()) {
+          recoveryModeRef.current = true;
+          setAuthMode('reset');
+          setAuthError('');
+          setAppState('auth');
+        } else {
           void hydrateSession(session);
         }
       }
@@ -890,8 +899,9 @@ export default function App() {
       }
 
       if (authMode === 'forgot') {
+        const recoveryUrl = `${window.location.origin}/?recovery=1`;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/?recovery=1`
+          redirectTo: recoveryUrl
         });
         if (error) throw error;
 
