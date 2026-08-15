@@ -363,17 +363,18 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
 
   return (
     <>
-      <div className="hidden md:block overflow-x-auto print:hidden">
-        <table className="w-full min-w-[980px] text-left border-collapse bg-white table-fixed">
+      <div className="hidden md:block w-full overflow-x-auto print:hidden">
+        <table className="w-full min-w-0 text-left border-collapse bg-white table-fixed">
           <colgroup>
-            <col style={{width:'11%'}} />
-            <col style={{width:'15%'}} />
+            <col style={{width:'10%'}} />
             <col style={{width:'14%'}} />
-            <col style={{width:'20%'}} />
+            <col style={{width:'12%'}} />
+            <col style={{width:'19%'}} />
             <col style={{width:'12%'}} />
             <col style={{width:'12%'}} />
+            <col style={{width:'9%'}} />
             <col style={{width:'8%'}} />
-            <col style={{width:'8%'}} />
+            <col style={{width:'4%'}} />
           </colgroup>
           <thead>
             <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A]">
@@ -385,11 +386,12 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
               <th className="p-3 font-bold text-right whitespace-nowrap">Pengeluaran</th>
               <th className="p-3 font-bold text-right whitespace-nowrap">Transfer</th>
               <th className="p-3 font-bold text-right whitespace-nowrap">Saldo</th>
+              <th className="p-2 font-bold text-center whitespace-nowrap">Aksi</th>
             </tr>
           </thead>
           <tbody>
             {calcData.length === 0 ? (
-              <tr><td colSpan="8" className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</td></tr>
+              <tr><td colSpan="9" className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</td></tr>
             ) : calcData.map(t => {
               const isTransfer = t.type === 'transfer';
               const accName = accounts.find(a => a.id === t.accountId)?.name || 'Dihapus';
@@ -406,6 +408,17 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                   <td className="p-3 text-sm font-black text-[#DC2626] text-right whitespace-nowrap">{renderTypeAmount(t,'expense')}</td>
                   <td className="p-3 text-sm font-black text-[#4F46E5] text-right whitespace-nowrap">{renderTypeAmount(t,'transfer')}</td>
                   <td className="p-3 text-sm font-bold text-[#172033] text-right whitespace-nowrap">{isTransfer ? <span className="text-[#64748B]">Mutasi</span> : <Money value={t.runBal} />}</td>
+                  <td className="p-2 text-center align-top">
+                    <button
+                      type="button"
+                      aria-label={`Hapus transaksi ${t.note || }`}
+                      title="Hapus transaksi"
+                      onClick={() => onDelete(t.id)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[#E2E8F0] bg-white text-[#64748B] hover:text-[#DC2626] hover:border-red-200 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -1170,10 +1183,10 @@ export default function App() {
      }
   };
 
-  const exportCSV = async () => {
+  const exportCSV = () => {
     const escapeCSV = (value) => {
       const text = String(value ?? '');
-      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      return /[\",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
 
     const sorted = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
@@ -1213,43 +1226,27 @@ export default function App() {
     const fileName = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}_${Date.now()}.csv`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
 
-    // Android/mobile: gunakan Web Share bila tersedia agar file benar-benar bisa dikirim
-    // ke Google Sheets/Drive/Files. Desktop tetap memakai download biasa.
+    // Selalu gunakan direct browser download. Ini lebih andal di Android/Chrome
+    // daripada menunggu navigator.share(), yang dapat menghilangkan user gesture.
     try {
-      if (navigator.share && typeof File !== 'undefined') {
-        const file = new File([blob], fileName, { type: 'text/csv;charset=utf-8' });
-        if (!navigator.canShare || navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: 'Laporan DompetKu',
-            text: 'Laporan keuangan DompetKu',
-            files: [file]
-          });
-          return;
-        }
-      }
-    } catch (error) {
-      if (error?.name === 'AbortError') return;
-      console.warn('Share CSV gagal, lanjut ke download biasa.', error);
-    }
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.setAttribute('download', fileName);
-    link.style.position = 'fixed';
-    link.style.left = '-9999px';
-    document.body.appendChild(link);
-    link.click();
-
-    // Fallback untuk browser mobile tertentu yang tidak menjalankan click() pada anchor Blob.
-    setTimeout(() => {
-      try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.rel = 'noopener';
+      link.style.position = 'fixed';
+      link.style.left = '-9999px';
+      link.style.top = '0';
+      document.body.appendChild(link);
+      link.click();
       setTimeout(() => {
-        URL.revokeObjectURL(url);
         link.remove();
-      }, 5000);
-    }, 150);
+        URL.revokeObjectURL(url);
+      }, 1500);
+    } catch (error) {
+      console.error('Gagal mengekspor CSV:', error);
+      alert('Ekspor CSV gagal. Silakan coba lagi.');
+    }
   };
 
   const executePrint = () => {
