@@ -99,6 +99,15 @@ const idb = {
   }
 };
 
+const getScopedData = async (storeName, userId) => {
+  const all = await idb.get(storeName) || [];
+  return all.filter(item => !userId || item.userId === userId);
+};
+
+const putScopedData = async (storeName, data, userId) => {
+  return idb.put(storeName, { ...data, userId });
+};
+
 const callDomiAI = async (prompt) => {
   try {
     const response = await fetch('/api/gemini', {
@@ -538,8 +547,25 @@ export default function App() {
     injectPWA();
     const loadData = async () => {
       try {
-        const users = await idb.get('user');
-        const storedUser = Array.isArray(users) && users.length > 0 ? users[0] : null;
+        const users = await idb.get('user') || [];
+        const sessionUserId = sessionStorage.getItem('dompetku_user_id');
+        let storedUser = users.find(u => u.id === sessionUserId) || null;
+
+        // Migrasi aman untuk versi lama yang hanya memiliki satu local_user.
+        if (!storedUser && users.length === 1 && users[0].id === 'local_user') {
+          storedUser = { ...users[0], id: 'user_' + Date.now().toString() };
+          await idb.delete('user', users[0].id);
+          await idb.put('user', storedUser);
+
+          for (const storeName of ['accounts', 'transactions', 'budgets', 'goals', 'recurring']) {
+            const oldItems = await idb.get(storeName) || [];
+            for (const item of oldItems) {
+              if (!item.userId) await idb.put(storeName, { ...item, userId: storedUser.id });
+            }
+          }
+        } else if (!storedUser && users.length > 0 && sessionUserId) {
+          storedUser = users.find(u => u.id === sessionUserId) || null;
+        }
 
         if (storedUser) {
           setUser(storedUser);
@@ -561,16 +587,17 @@ export default function App() {
           setAppState('auth');
         }
 
-        const accs = await idb.get('accounts') || [];
-        const txs = await idb.get('transactions') || [];
-        const bdgts = await idb.get('budgets') || [];
-        const gls = await idb.get('goals') || [];
-        const recs = await idb.get('recurring') || [];
+        const activeUserId = storedUser?.id || null;
+        const accs = activeUserId ? await getScopedData('accounts', activeUserId) : [];
+        const txs = activeUserId ? await getScopedData('transactions', activeUserId) : [];
+        const bdgts = activeUserId ? await getScopedData('budgets', activeUserId) : [];
+        const gls = activeUserId ? await getScopedData('goals', activeUserId) : [];
+        const recs = activeUserId ? await getScopedData('recurring', activeUserId) : [];
 
-        if (accs.length === 0) {
+        if (activeUserId && accs.length === 0) {
           const defaultAccounts = [
-            { id: 'acc_1', name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0 },
-            { id: 'acc_2', name: 'Rekening Bank', type: 'Bank', initialBalance: 0 }
+            { id: `acc_${activeUserId}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId: activeUserId },
+            { id: `acc_${activeUserId}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId: activeUserId }
           ];
           await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
           setAccounts(defaultAccounts);
@@ -609,25 +636,38 @@ export default function App() {
       if (!phone || phone.length < 10 || phone.length > 15) throw new Error('Nomor WhatsApp harus 10–15 digit.');
       if (!/^\d{6}$/.test(authPin)) throw new Error('PIN harus tepat 6 digit angka.');
 
-      const users = await idb.get('user');
-      const storedUser = Array.isArray(users) && users.length > 0 ? users[0] : null;
+      const users = await idb.get('user') || [];
+      const userByPhone = users.find(u => normalizePhone(u.phone) === phone);
 
       if (authMode === 'register') {
         if (!authName.trim()) throw new Error('Nama pengguna wajib diisi.');
         if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
-        if (storedUser?.pinHash) throw new Error('Akun sudah terdaftar di perangkat ini. Silakan masuk.');
+        if (userByPhone) throw new Error('Nomor WhatsApp sudah terdaftar. Silakan masuk.');
 
         const pinHash = await hashPin(authPin);
         const newUser = {
-          id: storedUser?.id || 'local_user',
+          id: 'user_' + Date.now().toString() + '_' + Math.random().toString(36).slice(2, 8),
           name: authName.trim(),
           phone,
           pinHash,
-          profilePic: storedUser?.profilePic || ''
+          profilePic: ''
         };
 
         await idb.put('user', newUser);
+
+        const defaultAccounts = [
+          { id: `acc_${newUser.id}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId: newUser.id },
+          { id: `acc_${newUser.id}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId: newUser.id }
+        ];
+        await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
+
         setUser(newUser);
+        setAccounts(defaultAccounts);
+        setTransactions([]);
+        setBudgets([]);
+        setGoals([]);
+        setRecurring([]);
+        sessionStorage.setItem('dompetku_user_id', newUser.id);
         sessionStorage.setItem('dompetku_authenticated', '1');
         setAuthPin('');
         setAuthConfirmPin('');
@@ -637,31 +677,52 @@ export default function App() {
       }
 
       if (authMode === 'forgot') {
-        if (!storedUser?.pinHash) throw new Error('Akun belum terdaftar. Silakan daftar terlebih dahulu.');
-        if (normalizePhone(storedUser.phone) !== phone) throw new Error('Nomor WhatsApp tidak cocok dengan akun ini.');
+        if (!userByPhone) throw new Error('Nomor WhatsApp belum terdaftar. Silakan daftar terlebih dahulu.');
         if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
 
         const pinHash = await hashPin(authPin);
-        const updatedUser = { ...storedUser, phone, pinHash };
+        const updatedUser = { ...userByPhone, pinHash };
         await idb.put('user', updatedUser);
         setUser(updatedUser);
         setAuthMode('login');
+        setAuthPhone(phone);
         setAuthPin('');
         setAuthConfirmPin('');
         setAuthError('PIN berhasil diubah. Silakan masuk dengan PIN baru.');
         return;
       }
 
-      if (!storedUser?.pinHash) {
-        setAuthMode('register');
-        throw new Error('Akun lama belum memiliki PIN. Silakan buat PIN baru.');
+      if (!userByPhone?.pinHash) {
+        throw new Error('Nomor WhatsApp belum terdaftar. Silakan daftar terlebih dahulu.');
       }
-      if (normalizePhone(storedUser.phone) !== phone) throw new Error('Nomor WhatsApp tidak ditemukan.');
 
       const pinHash = await hashPin(authPin);
-      if (pinHash !== storedUser.pinHash) throw new Error('PIN salah. Silakan coba lagi atau gunakan Lupa PIN.');
+      if (pinHash !== userByPhone.pinHash) throw new Error('PIN salah. Silakan coba lagi atau gunakan Lupa PIN.');
 
-      setUser(storedUser);
+      const userId = userByPhone.id;
+      const accs = await getScopedData('accounts', userId);
+      const txs = await getScopedData('transactions', userId);
+      const bdgts = await getScopedData('budgets', userId);
+      const gls = await getScopedData('goals', userId);
+      const recs = await getScopedData('recurring', userId);
+
+      if (accs.length === 0) {
+        const defaultAccounts = [
+          { id: `acc_${userId}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId },
+          { id: `acc_${userId}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId }
+        ];
+        await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
+        setAccounts(defaultAccounts);
+      } else {
+        setAccounts(accs);
+      }
+
+      setUser(userByPhone);
+      setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
+      setBudgets(bdgts);
+      setGoals(gls);
+      setRecurring(recs);
+      sessionStorage.setItem('dompetku_user_id', userId);
       sessionStorage.setItem('dompetku_authenticated', '1');
       setAuthPin('');
       setAuthError('');
@@ -686,6 +747,7 @@ export default function App() {
 
   const handleLogout = () => {
     sessionStorage.removeItem('dompetku_authenticated');
+    sessionStorage.removeItem('dompetku_user_id');
     setAuthMode('login');
     setAuthPin('');
     setAuthConfirmPin('');
@@ -783,7 +845,7 @@ export default function App() {
 
     if (action === 'confirm') {
       const newTx = {
-        id: 'tx_'+Date.now().toString(),
+        id: `tx_${user.id}_${Date.now()}`,
         timestamp: Date.now(),
         type: rec.type,
         category: rec.category,
@@ -791,7 +853,8 @@ export default function App() {
         amount: rec.amount,
         accountId: rec.accountId,
         toAccountId: rec.toAccountId || null,
-        dateStr: new Date().toLocaleDateString('id-ID')
+        dateStr: new Date().toLocaleDateString('id-ID'),
+        userId: user.id
       };
       await idb.put('transactions', newTx);
       setTransactions([newTx, ...transactions]);
@@ -820,7 +883,7 @@ export default function App() {
     if (txType === 'transfer' && formData.accountId === formData.toAccountId) { alert('Akun sumber dan akun tujuan tidak boleh sama.'); return; }
 
     const newTx = {
-      id: 'tx_'+Date.now().toString(),
+      id: `tx_${user.id}_${Date.now()}`,
       timestamp: Date.now(),
       type: txType,
       category: txType === 'transfer' ? 'Transfer' : (formData.category || CATEGORIES[txType][0]),
@@ -828,7 +891,8 @@ export default function App() {
       amount: val,
       accountId: formData.accountId,
       toAccountId: txType === 'transfer' ? formData.toAccountId : null,
-      dateStr: new Date().toLocaleDateString('id-ID')
+      dateStr: new Date().toLocaleDateString('id-ID'),
+      userId: user.id
     };
 
     const updatedTxs = [newTx, ...transactions];
@@ -1145,7 +1209,7 @@ export default function App() {
   };
 
   const handleSaveBudget = async (data) => {
-    const budget = { id: data.id || 'b_' + Date.now().toString(), category: data.category, limit: Number(data.limit) || 0 };
+    const budget = { id: data.id || `b_${user.id}_${Date.now()}`, category: data.category, limit: Number(data.limit) || 0, userId: user.id };
     await idb.put('budgets', budget);
     setBudgets(prev => data.id ? prev.map(b => b.id === data.id ? budget : b) : [...prev, budget]);
     setShowAddBudget(false);
@@ -1306,7 +1370,7 @@ export default function App() {
         transactions: await idb.get('transactions'), budgets: await idb.get('budgets'),
         goals: await idb.get('goals'), recurring: await idb.get('recurring'), settings: await idb.get('settings')
       };
-      const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `DompetKu_Backup_${new Date().toLocaleDateString('id-ID').replace(/\//g, '-')}.json`;
@@ -1539,7 +1603,7 @@ export default function App() {
             </div>
 
             <div className="bg-[#F7F8FA] border-t border-[#E2E8F0] p-4 text-center">
-              <p className="text-[10px] font-bold text-[#94A3B8]">DompetKu v1.0 • Data tersimpan di perangkat Anda</p>
+              <p className="text-[10px] font-bold text-[#94A3B8]">DompetKu v1.0 • Data tersimpan aman di perangkat ini</p>
             </div>
           </div>
         </div>
@@ -1703,14 +1767,14 @@ export default function App() {
       </nav>
       
       {txType && <TransactionModal txType={txType} accounts={accounts} accountBalances={accountBalances} onClose={() => setTxType(null)} onSubmit={handleTransactionSubmit} isAiLoading={isAiLoading} />}
-      {showAddAccount && <AddAccountModal onClose={() => setShowAddAccount(false)} onSave={(data) => { const newAcc = { id: 'acc_'+Date.now(), ...data }; idb.put('accounts', newAcc); setAccounts([...accounts, newAcc]); setShowAddAccount(false); }} />}
+      {showAddAccount && <AddAccountModal onClose={() => setShowAddAccount(false)} onSave={(data) => { const newAcc = { id: `acc_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('accounts', newAcc); setAccounts([...accounts, newAcc]); setShowAddAccount(false); }} />}
       {showAddBudget && <AddBudgetModal
         initialBudget={editingBudget}
         onClose={() => { setShowAddBudget(false); setEditingBudget(null); }}
         onSave={handleSaveBudget}
       />}
-      {showAddGoal && <AddGoalModal onClose={() => setShowAddGoal(false)} onSave={(data) => { const newG = { id: 'g_'+Date.now(), ...data }; idb.put('goals', newG); setGoals([...goals, newG]); setShowAddGoal(false); }} />}
-      {showAddRecurring && <AddRecurringModal accounts={accounts} onClose={() => setShowAddRecurring(false)} onSave={(data) => { const newR = { id: 'r_'+Date.now(), ...data }; idb.put('recurring', newR); setRecurring([...recurring, newR]); setShowAddRecurring(false); }} />}
+      {showAddGoal && <AddGoalModal onClose={() => setShowAddGoal(false)} onSave={(data) => { const newG = { id: `g_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('goals', newG); setGoals([...goals, newG]); setShowAddGoal(false); }} />}
+      {showAddRecurring && <AddRecurringModal accounts={accounts} onClose={() => setShowAddRecurring(false)} onSave={(data) => { const newR = { id: `r_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('recurring', newR); setRecurring([...recurring, newR]); setShowAddRecurring(false); }} />}
     </div>
   );
 }
