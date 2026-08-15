@@ -147,7 +147,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
 
   return (
     <>
-      <div className={`${showPreview ? "block" : "hidden md:block"} overflow-x-auto print:overflow-visible">
+      <div className={`${showPreview ? "block" : "hidden md:block"} overflow-x-auto print:overflow-visible`}>
         <table className="w-full text-left border-collapse bg-white">
           <thead>
             <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A] print:bg-slate-200 print:text-slate-900 print:border-slate-800">
