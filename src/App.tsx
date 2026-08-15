@@ -740,24 +740,9 @@ export default function App() {
     injectPWA();
 
     let mounted = true;
-    const recoveryModeRef = { current: false };
-
-    const detectRecoveryFlow = () => {
-      const hashParams = new URLSearchParams(
-        window.location.hash.replace(/^#/, '')
-      );
-      const searchParams = new URLSearchParams(window.location.search);
-      return (
-        hashParams.get('type') === 'recovery' ||
-        searchParams.get('type') === 'recovery' ||
-        searchParams.get('recovery') === '1'
-      );
-    };
-
-    recoveryModeRef.current = detectRecoveryFlow();
 
     const hydrateSession = async (session) => {
-      if (!session?.user || !mounted || recoveryModeRef.current) return;
+      if (!session?.user || !mounted) return;
       try {
         const data = await loadCloudUserData(session.user);
         if (!mounted) return;
@@ -783,8 +768,16 @@ export default function App() {
 
     const boot = async () => {
       try {
-        if (detectRecoveryFlow()) {
-          recoveryModeRef.current = true;
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, '')
+        );
+        const searchParams = new URLSearchParams(window.location.search);
+
+        const isRecovery =
+          hashParams.get('type') === 'recovery' ||
+          searchParams.get('recovery') === '1';
+
+        if (isRecovery) {
           setAuthMode('reset');
           setAuthError('');
           setAppState('auth');
@@ -792,8 +785,6 @@ export default function App() {
         }
 
         const { data: { session } } = await supabase.auth.getSession();
-        if (recoveryModeRef.current) return;
-
         if (session) {
           await hydrateSession(session);
         } else {
@@ -820,20 +811,20 @@ export default function App() {
         setAuthMode('login');
       }
       if (event === 'PASSWORD_RECOVERY') {
-        recoveryModeRef.current = true;
-        setAuthPin('');
-        setAuthConfirmPin('');
-        setAuthError('');
         setAuthMode('reset');
+        setAuthError('');
         setAppState('auth');
       }
       if (event === 'SIGNED_IN' && session && appState === 'loading') {
-        if (recoveryModeRef.current || detectRecoveryFlow()) {
-          recoveryModeRef.current = true;
-          setAuthMode('reset');
-          setAuthError('');
-          setAppState('auth');
-        } else {
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, '')
+        );
+        const searchParams = new URLSearchParams(window.location.search);
+        const isRecovery =
+          hashParams.get('type') === 'recovery' ||
+          searchParams.get('recovery') === '1';
+
+        if (!isRecovery) {
           void hydrateSession(session);
         }
       }
@@ -899,9 +890,8 @@ export default function App() {
       }
 
       if (authMode === 'forgot') {
-        const recoveryUrl = `${window.location.origin}/?recovery=1`;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: recoveryUrl
+          redirectTo: `${window.location.origin}/?recovery=1`
         });
         if (error) throw error;
 
@@ -1152,23 +1142,73 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    const headers = ["ID", "Tanggal", "Tipe", "Keterangan", "Kategori", "Akun Sumber", "Akun Tujuan", "Debit", "Kredit"];
-    const rows = filteredTransactions.map(t => {
-      const srcAcc = accounts.find(a=>a.id === t.accountId)?.name || '-';
-      const destAcc = accounts.find(a=>a.id === t.toAccountId)?.name || '-';
+    const headers = [
+      "ID Transaksi",
+      "Tanggal",
+      "Tipe",
+      "Keterangan",
+      "Kategori",
+      "Akun Sumber",
+      "Akun Tujuan",
+      "Pemasukan (Rp)",
+      "Pengeluaran (Rp)",
+      "Saldo Bersih Setelah Transaksi (Rp)"
+    ];
+
+    // Ekspor dalam urutan kronologis agar saldo mudah dibaca.
+    const sortedTransactions = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
+
+    // Hitung saldo bersih keseluruhan berdasarkan saldo awal seluruh akun.
+    let runningBalance = accounts.reduce(
+      (total, account) => total + (Number(account.initialBalance) || 0),
+      0
+    );
+
+    const escapeCSV = (value) => {
+      const text = String(value ?? '');
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+
+    const formatDate = (timestamp, dateStr) => {
+      if (dateStr) return dateStr;
+      return new Date(timestamp).toLocaleDateString('id-ID');
+    };
+
+    const rows = sortedTransactions.map(t => {
+      const srcAcc = accounts.find(a => a.id === t.accountId)?.name || '-';
+      const destAcc = accounts.find(a => a.id === t.toAccountId)?.name || '-';
+      const income = t.type === 'income' ? Number(t.amount) || 0 : 0;
+      const expense = (t.type === 'expense' || t.type === 'transfer') ? Number(t.amount) || 0 : 0;
+
+      // Transfer hanya memindahkan uang antar akun, sehingga tidak mengubah saldo bersih.
+      if (t.type === 'income') runningBalance += income;
+      if (t.type === 'expense') runningBalance -= expense;
+
       return [
-        t.id, t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID'), t.type.toUpperCase(), `"${t.note.replace(/"/g, '""')}"`, `"${t.category}"`,
-        srcAcc, destAcc, t.type === 'income' ? t.amount : 0, (t.type === 'expense' || t.type === 'transfer') ? t.amount : 0
-      ]
+        escapeCSV(t.id),
+        escapeCSV(formatDate(t.timestamp, t.dateStr)),
+        escapeCSV(t.type.toUpperCase()),
+        escapeCSV(t.note),
+        escapeCSV(t.category),
+        escapeCSV(srcAcc),
+        escapeCSV(destAcc),
+        income,
+        expense,
+        runningBalance
+      ].join(',');
     });
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Laporan_DompetKu_${reportPeriod.replace(/ /g, '_')}.csv`);
+
+    // BOM membantu Excel membaca UTF-8 dengan benar.
+    const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Laporan_DompetKu_${reportPeriod.replace(/ /g, '_')}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const executePrint = () => {
