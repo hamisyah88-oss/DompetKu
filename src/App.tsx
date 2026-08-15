@@ -147,7 +147,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
 
   return (
     <>
-      <div className="hidden md:block overflow-x-auto">
+      <div className={`${showPreview ? "block" : "hidden md:block"} overflow-x-auto print:overflow-visible">
         <table className="w-full text-left border-collapse bg-white">
           <thead>
             <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A] print:bg-slate-200 print:text-slate-900 print:border-slate-800">
@@ -199,7 +199,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
         </table>
       </div>
 
-      <div className="md:hidden space-y-3 p-4 bg-[#F7F8FA] print-hidden">
+      <div className={`${showPreview ? "hidden" : "md:hidden"} space-y-3 p-4 bg-[#F7F8FA] print-hidden`}>
         {calcData.length === 0 ? (
            <div className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</div>
         ) : (
@@ -281,19 +281,19 @@ const AddAccountModal = ({ onClose, onSave }) => {
   );
 };
 
-const AddBudgetModal = ({ onClose, onSave }) => {
-  const [bCat, setBCat] = useState(CATEGORIES.expense[0]);
-  const [bLimit, setBLimit] = useState('');
+const AddBudgetModal = ({ onClose, onSave, initialBudget = null }) => {
+  const [bCat, setBCat] = useState(initialBudget?.category || CATEGORIES.expense[0]);
+  const [bLimit, setBLimit] = useState(initialBudget?.limit ? String(initialBudget.limit) : '');
 
   const handleSave = (e) => {
      e.preventDefault();
-     onSave({ category: bCat, limit: parseInt(bLimit) || 0 });
+     onSave({ ...(initialBudget || {}), category: bCat, limit: parseInt(bLimit) || 0 });
   };
 
   return (
     <div className="fixed inset-0 bg-[#0F172A]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <form onSubmit={handleSave} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
-         <h3 className="font-black text-xl text-[#172033] mb-4">Set Anggaran Baru</h3>
+         <h3 className="font-black text-xl text-[#172033] mb-4">{initialBudget ? 'Edit Anggaran' : 'Set Anggaran Baru'}</h3>
          <div className="space-y-4">
            <div>
              <label className="block text-xs font-bold text-[#475569] uppercase mb-1">Kategori Pengeluaran</label>
@@ -523,6 +523,7 @@ export default function App() {
 
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [showAddBudget, setShowAddBudget] = useState(false);
+  const [editingBudget, setEditingBudget] = useState(null);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddRecurring, setShowAddRecurring] = useState(false);
   
@@ -1004,6 +1005,28 @@ export default function App() {
     </div>
   );
 
+  const handleClearReport = async () => {
+    if (filteredTransactions.length === 0) { alert('Tidak ada transaksi pada periode yang dipilih.'); return; }
+    const periodLabel = reportPeriod === 'Custom' ? `periode ${customDates.start || '?'} sampai ${customDates.end || '?'}` : reportPeriod;
+    if (!window.confirm(`Bersihkan ${filteredTransactions.length} transaksi pada ${periodLabel}? Data yang dihapus tidak dapat dikembalikan kecuali Anda memiliki backup JSON.`)) return;
+    if (window.prompt('Untuk menghapus transaksi yang dipilih, ketik HAPUS') !== 'HAPUS') { alert('Penghapusan dibatalkan.'); return; }
+    await Promise.all(filteredTransactions.map(t => idb.delete('transactions', t.id)));
+    const removed = new Set(filteredTransactions.map(t => t.id));
+    setTransactions(prev => prev.filter(t => !removed.has(t.id)));
+    setShowPreview(false);
+    alert('Transaksi pada periode yang dipilih berhasil dibersihkan.');
+  };
+
+  const handleClearAllTransactions = async () => {
+    if (transactions.length === 0) { alert('Belum ada transaksi untuk dihapus.'); return; }
+    if (!window.confirm(`PERINGATAN: ${transactions.length} transaksi akan dihapus permanen. Anggaran, akun, target, dan profil TIDAK akan dihapus. Lanjutkan?`)) return;
+    if (window.prompt('Ketik HAPUS SEMUA untuk menghapus seluruh histori transaksi') !== 'HAPUS SEMUA') { alert('Penghapusan dibatalkan.'); return; }
+    await Promise.all(transactions.map(t => idb.delete('transactions', t.id)));
+    setTransactions([]);
+    setShowPreview(false);
+    alert('Seluruh transaksi berhasil dihapus.');
+  };
+
   const renderReports = () => {
     const incomeTotal = summary.income || 0;
     const expenseTotal = summary.expense || 0;
@@ -1021,6 +1044,12 @@ export default function App() {
              </button>
              <button onClick={exportCSV} className="flex-1 md:flex-none justify-center px-4 py-2 bg-white border-2 border-[#D4A72C] text-[#B8860B] hover:bg-[#F7F8FA] rounded-xl font-bold text-sm shadow-sm flex items-center gap-2 transition active:scale-95">
                <Download size={16}/> Ekspor CSV
+             </button>
+             <button onClick={handleClearReport} className="flex-1 md:flex-none justify-center px-4 py-2 bg-white border-2 border-red-200 text-[#DC2626] hover:bg-red-50 rounded-xl font-bold text-sm shadow-sm flex items-center gap-2 transition active:scale-95">
+               <Trash2 size={16}/> Bersihkan Periode
+             </button>
+             <button onClick={handleClearAllTransactions} className="flex-1 md:flex-none justify-center px-4 py-2 bg-[#DC2626] text-white hover:bg-red-700 rounded-xl font-bold text-sm shadow-md flex items-center gap-2 transition active:scale-95">
+               <Trash2 size={16}/> Hapus Semua
              </button>
            </div>
         </div>
@@ -1115,6 +1144,22 @@ export default function App() {
     );
   };
 
+  const handleSaveBudget = async (data) => {
+    const budget = { id: data.id || 'b_' + Date.now().toString(), category: data.category, limit: Number(data.limit) || 0 };
+    await idb.put('budgets', budget);
+    setBudgets(prev => data.id ? prev.map(b => b.id === data.id ? budget : b) : [...prev, budget]);
+    setShowAddBudget(false);
+    setEditingBudget(null);
+  };
+
+  const handleDeleteBudget = async (id) => {
+    const budget = budgets.find(b => b.id === id);
+    if (!budget) return;
+    if (!window.confirm(`Hapus anggaran ${budget.category}? Transaksi keuangan tidak akan ikut terhapus.`)) return;
+    await idb.delete('budgets', id);
+    setBudgets(prev => prev.filter(b => b.id !== id));
+  };
+
   const renderBudgets = () => {
     const budgetsWithUsage = budgets.map(b => {
        const now = new Date();
@@ -1127,7 +1172,7 @@ export default function App() {
       <div className="space-y-6 pb-24 animate-in fade-in">
         <div className="flex justify-between items-center">
            <h2 className="text-2xl font-black text-[#172033]">Anggaran Bulanan</h2>
-           <button onClick={() => setShowAddBudget(true)} className="px-4 py-2 bg-[#D4A72C] text-[#172033] font-bold rounded-xl shadow-md hover:bg-[#F2C94C] transition active:scale-95 flex items-center gap-2">
+           <button onClick={() => { setEditingBudget(null); setShowAddBudget(true); }} className="px-4 py-2 bg-[#D4A72C] text-[#172033] font-bold rounded-xl shadow-md hover:bg-[#F2C94C] transition active:scale-95 flex items-center gap-2">
               <PlusCircle size={16} /> Tambah
            </button>
         </div>
@@ -1162,9 +1207,13 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex justify-between items-end mt-3 pl-3">
-                       <p className="text-[10px] text-[#475569] font-bold uppercase">Sisa: Rp {Math.max(0, b.limit - b.used).toLocaleString('id-ID')}</p>
-                       <p className={`text-right text-xs font-black ${textColor}`}>{b.percent.toFixed(1)}% Terpakai</p>
-                    </div>
+                        <p className="text-[10px] text-[#475569] font-bold uppercase">Sisa: Rp {Math.max(0, b.limit - b.used).toLocaleString('id-ID')}</p>
+                        <p className={`text-right text-xs font-black ${textColor}`}>{b.percent.toFixed(1)}% Terpakai</p>
+                     </div>
+                     <div className="flex justify-end gap-2 mt-4 pl-3 pt-3 border-t border-[#E2E8F0]">
+                        <button type="button" onClick={() => { setEditingBudget(b); setShowAddBudget(true); }} className="px-3 py-1.5 bg-white border border-[#CBD5E1] text-[#475569] text-xs font-bold rounded-lg hover:bg-[#F7F8FA] flex items-center gap-1"><Save size={14}/> Edit</button>
+                        <button type="button" onClick={() => handleDeleteBudget(b.id)} className="px-3 py-1.5 bg-red-50 border border-red-100 text-[#DC2626] text-xs font-bold rounded-lg hover:bg-red-100 flex items-center gap-1"><Trash2 size={14}/> Hapus</button>
+                     </div>
                  </div>
                )
              })}
@@ -1357,11 +1406,8 @@ export default function App() {
            </div>
            
            <div className="p-3 space-y-1">
-              <button onClick={handleLogout} className="w-full p-4 flex justify-between items-center hover:bg-red-50 transition border border-transparent rounded-xl group">
-                  <span className="font-bold text-[#DC2626] flex items-center gap-3"><LogOut size={20}/> Keluar / Logout</span>
-                  <ChevronRight size={16} className="text-[#94A3B8] group-hover:text-[#DC2626]"/>
-               </button>
-               <button onClick={handleBackup} className="w-full p-4 flex justify-between items-center hover:bg-[#F7F8FA] transition border border-transparent rounded-xl">
+              <div className="px-4 pt-2 pb-1"><p className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest">Data DompetKu</p></div>
+              <button onClick={handleBackup} className="w-full p-4 flex justify-between items-center hover:bg-[#F7F8FA] transition border border-transparent rounded-xl">
                  <span className="font-bold text-[#172033] flex items-center gap-3"><Save size={20} className="text-[#D4A72C]"/> Backup Data (JSON)</span>
                  <ArrowUpRight size={16} className="text-[#94A3B8]"/>
               </button>
@@ -1370,7 +1416,11 @@ export default function App() {
                  <input type="file" accept=".json" className="hidden" onChange={handleRestore} />
                  <ArrowUpRight size={16} className="text-[#94A3B8]"/>
               </label>
-
+              <div className="border-t border-[#E2E8F0] my-2"></div>
+              <button onClick={handleLogout} className="w-full p-4 flex justify-between items-center hover:bg-red-50 transition border border-transparent rounded-xl group">
+                 <span className="font-bold text-[#DC2626] flex items-center gap-3"><LogOut size={20}/> Keluar / Logout</span>
+                 <ChevronRight size={16} className="text-[#94A3B8] group-hover:text-[#DC2626]"/>
+              </button>
            </div>
         </div>
         <div className="text-center">
@@ -1504,7 +1554,21 @@ export default function App() {
           @media print {
               body { background: white !important; margin: 0 !important; padding: 0 !important; }
               .print-hidden { display: none !important; }
-              .print-container { display: block !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 20px !important; box-shadow: none !important; border: none !important; }
+              .print-container { display: block !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 16px !important; box-shadow: none !important; border: none !important; }
+              #dompetku-report table { display: table !important; width: 100% !important; table-layout: fixed !important; }
+              #dompetku-report thead { display: table-header-group !important; }
+              #dompetku-report tbody { display: table-row-group !important; }
+              #dompetku-report tr { display: table-row !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+              #dompetku-report th, #dompetku-report td { display: table-cell !important; font-size: 9px !important; padding: 6px !important; vertical-align: top !important; word-break: break-word !important; }
+              #dompetku-report th:nth-child(1), #dompetku-report td:nth-child(1) { width: 12% !important; }
+              #dompetku-report th:nth-child(2), #dompetku-report td:nth-child(2) { width: 18% !important; }
+              #dompetku-report th:nth-child(3), #dompetku-report td:nth-child(3) { width: 14% !important; }
+              #dompetku-report th:nth-child(4), #dompetku-report td:nth-child(4) { width: 21% !important; }
+              #dompetku-report th:nth-child(5), #dompetku-report td:nth-child(5) { width: 12% !important; }
+              #dompetku-report th:nth-child(6), #dompetku-report td:nth-child(6) { width: 12% !important; }
+              #dompetku-report th:nth-child(7), #dompetku-report td:nth-child(7) { width: 11% !important; }
+              #dompetku-report .print-hidden { display: none !important; }
+              @page { size: A4 portrait; margin: 10mm; }
           }
         `}} />
         <div className="fixed top-4 inset-x-0 mx-auto max-w-4xl flex justify-between items-center bg-[#172033] text-white p-4 rounded-2xl shadow-2xl z-50 print-hidden">
@@ -1640,7 +1704,11 @@ export default function App() {
       
       {txType && <TransactionModal txType={txType} accounts={accounts} accountBalances={accountBalances} onClose={() => setTxType(null)} onSubmit={handleTransactionSubmit} isAiLoading={isAiLoading} />}
       {showAddAccount && <AddAccountModal onClose={() => setShowAddAccount(false)} onSave={(data) => { const newAcc = { id: 'acc_'+Date.now(), ...data }; idb.put('accounts', newAcc); setAccounts([...accounts, newAcc]); setShowAddAccount(false); }} />}
-      {showAddBudget && <AddBudgetModal onClose={() => setShowAddBudget(false)} onSave={(data) => { const newB = { id: 'b_'+Date.now(), ...data }; idb.put('budgets', newB); setBudgets([...budgets, newB]); setShowAddBudget(false); }} />}
+      {showAddBudget && <AddBudgetModal
+        initialBudget={editingBudget}
+        onClose={() => { setShowAddBudget(false); setEditingBudget(null); }}
+        onSave={handleSaveBudget}
+      />}
       {showAddGoal && <AddGoalModal onClose={() => setShowAddGoal(false)} onSave={(data) => { const newG = { id: 'g_'+Date.now(), ...data }; idb.put('goals', newG); setGoals([...goals, newG]); setShowAddGoal(false); }} />}
       {showAddRecurring && <AddRecurringModal accounts={accounts} onClose={() => setShowAddRecurring(false)} onSave={(data) => { const newR = { id: 'r_'+Date.now(), ...data }; idb.put('recurring', newR); setRecurring([...recurring, newR]); setShowAddRecurring(false); }} />}
     </div>
