@@ -1170,7 +1170,7 @@ export default function App() {
      }
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
     const escapeCSV = (value) => {
       const text = String(value ?? '');
       return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -1209,23 +1209,47 @@ export default function App() {
       ].map(escapeCSV).join(',');
     });
 
-    // CSV yang kompatibel dengan Excel/Google Sheets di desktop maupun Android.
-    // BOM + CRLF + trailing newline membantu beberapa viewer mobile mengenali seluruh isi.
-    const csvContent = [headers.map(escapeCSV).join(','), ...rows].join('\r\n') + '\r\n';
-    const csv = '\uFEFF' + csvContent;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n') + '\r\n';
+    const fileName = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}_${Date.now()}.csv`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+
+    // Android/mobile: gunakan Web Share bila tersedia agar file benar-benar bisa dikirim
+    // ke Google Sheets/Drive/Files. Desktop tetap memakai download biasa.
+    try {
+      if (navigator.share && typeof File !== 'undefined') {
+        const file = new File([blob], fileName, { type: 'text/csv;charset=utf-8' });
+        if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: 'Laporan DompetKu',
+            text: 'Laporan keuangan DompetKu',
+            files: [file]
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      console.warn('Share CSV gagal, lanjut ke download biasa.', error);
+    }
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}_${new Date().getTime()}.csv`;
-    link.style.display = 'none';
-    link.rel = 'noopener';
+    link.download = fileName;
+    link.setAttribute('download', fileName);
+    link.style.position = 'fixed';
+    link.style.left = '-9999px';
     document.body.appendChild(link);
     link.click();
-    link.remove();
 
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    // Fallback untuk browser mobile tertentu yang tidak menjalankan click() pada anchor Blob.
+    setTimeout(() => {
+      try { window.open(url, '_blank', 'noopener,noreferrer'); } catch {}
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        link.remove();
+      }, 5000);
+    }, 150);
   };
 
   const executePrint = () => {
@@ -1987,9 +2011,15 @@ export default function App() {
           .report-screen { display:block; }
           .report-print-only { display:none; }
           .preview-table-wrap { overflow:hidden; }
-          .preview-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
-          .preview-table th, .preview-table td { padding:8px 7px; vertical-align:top; font-size:12px; line-height:1.25; overflow-wrap:anywhere; word-break:break-word; }
-          .preview-table .money-cell { white-space:nowrap; }
+          .preview-table { width:100%; min-width:0; max-width:100%; table-layout:fixed; border-collapse:collapse; }
+          .preview-table th, .preview-table td { padding:7px 6px; vertical-align:top; font-size:11px; line-height:1.25; overflow-wrap:anywhere; word-break:break-word; }
+          .preview-table .money-cell { white-space:nowrap; text-align:right; }
+          .preview-screen-table .money-inline { font-size:11px !important; gap:3px !important; }
+          @media (min-width: 768px) {
+            .preview-table-wrap { width:100%; max-width:100%; overflow:hidden; }
+            .preview-screen-table { width:100% !important; min-width:0 !important; table-layout:fixed !important; }
+            .preview-screen-table th, .preview-screen-table td { padding-left:5px !important; padding-right:5px !important; }
+          }
           .preview-toolbar { box-sizing:border-box; width:min(1280px, calc(100% - 32px)); margin:16px auto 0; }
           .preview-sheet { width:min(1120px, calc(100% - 32px)); max-width:none; margin:16px auto 24px; box-sizing:border-box; }
           .preview-screen-table { width:100%; table-layout:fixed; }
