@@ -1950,85 +1950,306 @@ export default function App() {
   }
 
   if (showPreview) {
+    const printRows = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
+    let printRunningBalance = accounts.reduce(
+      (total, account) => total + (Number(account.initialBalance) || 0),
+      0
+    );
+
+    const printRowsWithBalance = printRows.map((t) => {
+      const amount = Number(t.amount) || 0;
+      if (t.type === 'income') printRunningBalance += amount;
+      if (t.type === 'expense') printRunningBalance -= amount;
+
+      return {
+        ...t,
+        printBalance: printRunningBalance,
+        isTransfer: t.type === 'transfer',
+        accountName: accounts.find((a) => a.id === t.accountId)?.name || 'Dihapus',
+        destinationName: accounts.find((a) => a.id === t.toAccountId)?.name || 'Dihapus',
+      };
+    });
+
     return (
-      <div className="min-h-screen bg-[#F7F8FA] font-sans p-4 md:p-8 flex justify-center print:p-0 print:bg-white relative">
-        <style dangerouslySetInnerHTML={{__html: `
+      <div className="min-h-screen bg-[#E5E7EB] font-sans print:bg-white print:min-h-0">
+        <style dangerouslySetInnerHTML={{ __html: `
           @media print {
-              body { background: white !important; margin: 0 !important; padding: 0 !important; }
-              .print-hidden { display: none !important; }
-              .print-container { display: block !important; width: 100% !important; max-width: none !important; margin: 0 !important; padding: 16px !important; box-shadow: none !important; border: none !important; }
-              #dompetku-report table { display: table !important; width: 100% !important; table-layout: fixed !important; }
-              #dompetku-report thead { display: table-header-group !important; }
-              #dompetku-report tbody { display: table-row-group !important; }
-              #dompetku-report tr { display: table-row !important; break-inside: avoid !important; page-break-inside: avoid !important; }
-              #dompetku-report th, #dompetku-report td { display: table-cell !important; font-size: 9px !important; padding: 6px !important; vertical-align: top !important; word-break: break-word !important; }
-              #dompetku-report th:nth-child(1), #dompetku-report td:nth-child(1) { width: 12% !important; }
-              #dompetku-report th:nth-child(2), #dompetku-report td:nth-child(2) { width: 18% !important; }
-              #dompetku-report th:nth-child(3), #dompetku-report td:nth-child(3) { width: 14% !important; }
-              #dompetku-report th:nth-child(4), #dompetku-report td:nth-child(4) { width: 21% !important; }
-              #dompetku-report th:nth-child(5), #dompetku-report td:nth-child(5) { width: 12% !important; }
-              #dompetku-report th:nth-child(6), #dompetku-report td:nth-child(6) { width: 12% !important; }
-              #dompetku-report th:nth-child(7), #dompetku-report td:nth-child(7) { width: 11% !important; }
-              #dompetku-report .print-hidden { display: none !important; }
-              @page { size: A4 portrait; margin: 10mm; }
+            @page {
+              size: A4 portrait;
+              margin: 7mm;
+            }
+
+            html, body {
+              background: #fff !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+            }
+
+            body {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+
+            .print-hidden {
+              display: none !important;
+            }
+
+            .dompetku-print-page {
+              display: block !important;
+              width: 100% !important;
+              max-width: none !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+
+            .dompetku-print-sheet {
+              width: 100% !important;
+              max-width: none !important;
+              margin: 0 !important;
+              padding: 4mm !important;
+              box-shadow: none !important;
+              border: 0 !important;
+              border-radius: 0 !important;
+              background: #fff !important;
+            }
+
+            .print-summary {
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+
+            .print-ledger {
+              margin-top: 5mm !important;
+              break-inside: auto !important;
+              page-break-inside: auto !important;
+              overflow: visible !important;
+            }
+
+            .print-ledger-table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              table-layout: fixed !important;
+              page-break-inside: auto !important;
+              break-inside: auto !important;
+            }
+
+            .print-ledger-table thead {
+              display: table-header-group !important;
+            }
+
+            .print-ledger-table tbody {
+              display: table-row-group !important;
+            }
+
+            .print-ledger-table tr {
+              display: table-row !important;
+              height: auto !important;
+              min-height: 0 !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+
+            .print-ledger-table th,
+            .print-ledger-table td {
+              display: table-cell !important;
+              height: auto !important;
+              min-height: 0 !important;
+              padding: 4px 5px !important;
+              font-size: 8.5px !important;
+              line-height: 1.25 !important;
+              vertical-align: middle !important;
+              white-space: normal !important;
+              word-break: normal !important;
+              overflow-wrap: anywhere !important;
+            }
+
+            .print-ledger-table th:nth-child(1),
+            .print-ledger-table td:nth-child(1) { width: 10%; }
+
+            .print-ledger-table th:nth-child(2),
+            .print-ledger-table td:nth-child(2) { width: 16%; }
+
+            .print-ledger-table th:nth-child(3),
+            .print-ledger-table td:nth-child(3) { width: 13%; }
+
+            .print-ledger-table th:nth-child(4),
+            .print-ledger-table td:nth-child(4) { width: 18%; }
+
+            .print-ledger-table th:nth-child(5),
+            .print-ledger-table td:nth-child(5) { width: 11%; }
+
+            .print-ledger-table th:nth-child(6),
+            .print-ledger-table td:nth-child(6) { width: 11%; }
+
+            .print-ledger-table th:nth-child(7),
+            .print-ledger-table td:nth-child(7) { width: 11%; }
+
+            .print-ledger-table th:nth-child(8),
+            .print-ledger-table td:nth-child(8) { width: 10%; }
+
+            .print-footer {
+              margin-top: 5mm !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+
+            .print-card-grid {
+              display: grid !important;
+              grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+              gap: 3mm !important;
+            }
+
+            .print-card {
+              padding: 3mm !important;
+            }
+
+            h1 { font-size: 18px !important; }
+            h2 { font-size: 12px !important; }
+            h3 { font-size: 10px !important; }
+
+            .print-header {
+              margin-bottom: 5mm !important;
+              padding-bottom: 4mm !important;
+            }
           }
         `}} />
+
         <div className="fixed top-4 inset-x-0 mx-auto max-w-4xl flex justify-between items-center bg-[#172033] text-white p-4 rounded-2xl shadow-2xl z-50 print-hidden">
-          <h2 className="font-bold flex items-center gap-2 text-[#D4A72C]"><Eye size={18}/> Preview Cetak</h2>
+          <h2 className="font-bold flex items-center gap-2 text-[#D4A72C]">
+            <Eye size={18}/> Preview Cetak
+          </h2>
           <div className="flex gap-2">
-            <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-transparent border border-white text-white hover:bg-white/10 rounded-lg font-bold text-sm transition">Tutup</button>
-            <button type="button" onClick={executePrint} className="px-4 py-2 bg-[#D4A72C] hover:bg-[#F2C94C] text-[#172033] rounded-lg font-bold text-sm flex items-center gap-2 transition">
+            <button
+              onClick={() => setShowPreview(false)}
+              className="px-4 py-2 bg-transparent border border-white text-white hover:bg-white/10 rounded-lg font-bold text-sm transition"
+            >
+              Tutup
+            </button>
+            <button
+              type="button"
+              onClick={executePrint}
+              className="px-4 py-2 bg-[#D4A72C] hover:bg-[#F2C94C] text-[#172033] rounded-lg font-bold text-sm flex items-center gap-2 transition"
+            >
               <Printer size={16} /> Print / Cetak
             </button>
           </div>
         </div>
 
-        <div id="dompetku-report" className="print-container bg-white max-w-4xl w-full shadow-lg mt-20 print:mt-0 print:shadow-none p-10 md:p-14 border border-[#E2E8F0] print:border-none">
-          <div className="border-b-4 border-[#172033] pb-6 mb-8 flex justify-between items-end">
-            <div className="flex items-center gap-4">
-              <UserAvatar user={user} size={16} textClass="text-2xl" />
-              <div>
-                <h1 className="text-4xl font-black uppercase tracking-widest text-[#172033]">DOMPETKU</h1>
-                <p className="text-[#475569] mt-1 font-bold text-lg tracking-widest">LAPORAN KEUANGAN PRIBADI</p>
+        <div className="dompetku-print-page min-h-screen flex justify-center p-4 md:p-8 print:p-0">
+          <div
+            id="dompetku-report"
+            className="dompetku-print-sheet bg-white w-full max-w-4xl shadow-lg mt-20 p-8 md:p-12 border border-[#E2E8F0] rounded-xl"
+          >
+            <div className="print-header border-b-4 border-[#172033] pb-5 mb-6 flex justify-between items-end gap-6">
+              <div className="flex items-center gap-4 min-w-0">
+                <UserAvatar user={user} size={16} textClass="text-2xl" />
+                <div className="min-w-0">
+                  <h1 className="text-4xl font-black uppercase tracking-widest text-[#172033]">DOMPETKU</h1>
+                  <p className="text-[#475569] mt-1 font-bold text-lg tracking-widest">LAPORAN KEUANGAN PRIBADI</p>
+                </div>
+              </div>
+
+              <div className="text-right text-sm text-[#475569] font-medium bg-[#F7F8FA] p-3 rounded-lg border border-[#E2E8F0] shrink-0">
+                <p>Pemilik Akun: <span className="font-bold text-[#172033] uppercase">{user?.name}</span></p>
+                <p>Periode: <span className="font-bold text-[#172033] uppercase">{reportPeriod}</span></p>
+                <p>Tanggal Cetak: <span className="font-bold text-[#172033]">{new Date().toLocaleDateString('id-ID')}</span></p>
               </div>
             </div>
-            <div className="text-right text-sm text-[#475569] font-medium bg-[#F7F8FA] p-3 rounded-lg border border-[#E2E8F0] print:border-none print:bg-transparent">
-              <p>Pemilik Akun: <span className="font-bold text-[#172033] uppercase">{user?.name}</span></p>
-              <p>Periode: <span className="font-bold text-[#172033] uppercase">{reportPeriod}</span></p>
-              <p>Tanggal Cetak: <span className="font-bold text-[#172033]">{new Date().toLocaleDateString('id-ID')}</span></p>
+
+            <section className="print-summary">
+              <h3 className="font-black text-xl text-[#172033] mb-3 uppercase tracking-wider">Ringkasan Keuangan</h3>
+
+              <div className="print-card-grid grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pemasukan</p>
+                  <h2 className="text-xl font-black text-[#16A34A]">Rp {summary.income.toLocaleString('id-ID')}</h2>
+                </div>
+
+                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pengeluaran</p>
+                  <h2 className="text-xl font-black text-[#DC2626]">Rp {summary.expense.toLocaleString('id-ID')}</h2>
+                </div>
+
+                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
+                  <h2 className="text-xl font-black text-[#4F46E5]">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
+                </div>
+
+                <div className="print-card border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white">
+                  <p className="text-[10px] font-bold uppercase text-[#D4A72C] mb-1">Kekayaan Bersih (Total)</p>
+                  <h2 className="text-xl font-black">Rp {summary.netWorth.toLocaleString('id-ID')}</h2>
+                </div>
+              </div>
+            </section>
+
+            <section className="print-ledger">
+              <h3 className="font-black text-xl text-[#172033] mb-3 uppercase tracking-wider">Buku Besar Transaksi</h3>
+
+              <div className="border-2 border-[#172033] rounded-xl overflow-visible">
+                <div className="bg-[#172033] text-white p-3">
+                  <h3 className="font-bold uppercase tracking-widest text-sm text-center">
+                    Rincian Transaksi ({reportPeriod})
+                  </h3>
+                </div>
+
+                <table className="print-ledger-table w-full text-left bg-white">
+                  <thead>
+                    <tr className="bg-[#F7F8FA] text-[#172033] border-b-2 border-[#172033]">
+                      <th className="font-bold">Tanggal</th>
+                      <th className="font-bold">Keterangan</th>
+                      <th className="font-bold">Kategori</th>
+                      <th className="font-bold">Akun</th>
+                      <th className="font-bold text-right">Pemasukan</th>
+                      <th className="font-bold text-right">Pengeluaran</th>
+                      <th className="font-bold text-right">Transfer</th>
+                      <th className="font-bold text-right">Saldo</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {printRowsWithBalance.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" className="text-center text-[#64748B] italic py-4">
+                          Belum ada transaksi pada periode ini.
+                        </td>
+                      </tr>
+                    ) : (
+                      printRowsWithBalance.map((t) => (
+                        <tr key={t.id} className="border-b border-[#CBD5E1]">
+                          <td className="text-[#475569]">
+                            {t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}
+                          </td>
+                          <td className="font-bold text-[#172033]">{t.note}</td>
+                          <td className="text-[#475569]">{t.category || '-'}</td>
+                          <td className="font-bold text-[#475569]">
+                            {t.isTransfer ? `${t.accountName} → ${t.destinationName}` : t.accountName}
+                          </td>
+                          <td className="text-right font-bold text-[#16A34A]">
+                            {t.type === 'income' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                          </td>
+                          <td className="text-right font-bold text-[#DC2626]">
+                            {t.type === 'expense' ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                          </td>
+                          <td className="text-right font-bold text-[#4F46E5]">
+                            {t.isTransfer ? `Rp ${t.amount.toLocaleString('id-ID')}` : '-'}
+                          </td>
+                          <td className="text-right font-bold text-[#172033]">
+                            Rp {t.printBalance.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div className="print-footer mt-8 text-center text-xs text-[#64748B] font-bold border-t-2 border-[#E2E8F0] pt-5">
+              <p>DompetKu v1.0 • © 2026 Hamisah • All Rights Reserved</p>
             </div>
-          </div>
-
-          <h3 className="font-black text-xl text-[#172033] mb-4 uppercase tracking-wider">Ringkasan Keuangan</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-             <div className="border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-               <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pemasukan</p>
-               <h2 className="text-xl font-black text-[#16A34A]">Rp {summary.income.toLocaleString('id-ID')}</h2>
-             </div>
-             <div className="border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-               <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pengeluaran</p>
-               <h2 className="text-xl font-black text-[#DC2626]">Rp {summary.expense.toLocaleString('id-ID')}</h2>
-             </div>
-             <div className="border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-               <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
-               <h2 className="text-xl font-black text-[#4F46E5]">Rp {summary.transfer.toLocaleString('id-ID')}</h2>
-             </div>
-             <div className="border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white print:border-4 print:border-[#172033] print:bg-white print:text-[#172033]">
-               <p className="text-[10px] font-bold uppercase text-[#D4A72C] print:text-[#64748B] mb-1">Kekayaan Bersih (Total)</p>
-               <h2 className="text-xl font-black">Rp {summary.netWorth.toLocaleString('id-ID')}</h2>
-             </div>
-          </div>
-
-          <h3 className="font-black text-xl text-[#172033] mb-4 uppercase tracking-wider">Buku Besar Transaksi</h3>
-          <div className="mb-8 border-2 border-[#172033] rounded-xl overflow-hidden">
-             <div className="bg-[#172033] text-white p-3 print:bg-[#F7F8FA] print:text-[#172033] print:border-b-2 print:border-[#172033]">
-                <h3 className="font-bold uppercase tracking-widest text-sm text-center">Rincian Transaksi ({reportPeriod})</h3>
-             </div>
-             <LedgerTableComponent data={filteredTransactions} accounts={accounts} showPreview={true} onDelete={()=>{}} />
-          </div>
-
-          <div className="mt-16 text-center text-xs text-[#64748B] font-bold border-t-2 border-[#E2E8F0] pt-6">
-            <p>DompetKu v1.0 • © 2026 Hamisah • All Rights Reserved</p>
           </div>
         </div>
       </div>
