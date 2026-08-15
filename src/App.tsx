@@ -356,8 +356,8 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
               <th className="p-3 font-bold">Keterangan</th>
               <th className="p-3 font-bold">Kategori</th>
               <th className="p-3 font-bold">Akun</th>
-              <th className="p-3 font-bold text-right">Debit</th>
-              <th className="p-3 font-bold text-right">Kredit</th>
+              <th className="p-3 font-bold text-right">Pemasukan</th>
+              <th className="p-3 font-bold text-right">Pengeluaran</th>
               <th className="p-3 font-bold text-right border-l border-[#E2E8F0] print:border-slate-400">Saldo</th>
               {!showPreview && <th className="p-3 font-bold text-center w-12 print-hidden">Aksi</th>}
             </tr>
