@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
+
 const injectPWA = () => {
   if (document.getElementById('dompetku-manifest')) return;
   const manifest = {
@@ -320,6 +321,15 @@ const CATEGORIES = {
   expense: ['Makanan', 'Transportasi', 'Belanja', 'Tagihan', 'Pendidikan', 'Kesehatan', 'Hiburan', 'Lainnya']
 };
 
+const formatIDR = (value) => Number(value || 0).toLocaleString('id-ID');
+
+const Money = ({ value, className = "" }) => (
+  <span className={`inline-flex items-baseline gap-1 whitespace-nowrap align-baseline ${className}`}>
+    <span className="money-currency">Rp</span>
+    <span>{formatIDR(value)}</span>
+  </span>
+);
+
 const UserAvatar = ({ user, size = 10, textClass = "text-xl" }) => {
   const sizeMap = { 8: 'w-8 h-8', 10: 'w-10 h-10', 12: 'w-12 h-12', 16: 'w-16 h-16', 20: 'w-20 h-20', 24: 'w-24 h-24' };
   const avatarSize = sizeMap[size] || 'w-10 h-10';
@@ -335,29 +345,6 @@ const UserAvatar = ({ user, size = 10, textClass = "text-xl" }) => {
   );
 };
 
-
-const MoneyStack = ({ amount, color = 'text-[#172033]', size = 'md', align = 'right', className = '' }) => {
-  const sizeMap = {
-    sm: { currency: 'text-[10px]', value: 'text-sm' },
-    md: { currency: 'text-[10px]', value: 'text-lg' },
-    lg: { currency: 'text-xs', value: 'text-2xl' },
-    xl: { currency: 'text-sm', value: 'text-3xl' }
-  };
-  const sizes = sizeMap[size] || sizeMap.md;
-  return (
-    <span className={`inline-flex flex-col ${align === 'left' ? 'items-start' : align === 'center' ? 'items-center' : 'items-end'} leading-none ${color} ${className}`}>
-      <span className={`${sizes.currency} font-bold opacity-80`}>Rp</span>
-      <span className={`${sizes.value} font-black mt-0.5 tracking-tight whitespace-nowrap`}>{Number(amount || 0).toLocaleString('id-ID')}</span>
-    </span>
-  );
-};
-
-const MoneyDash = ({ amount, color = 'text-[#172033]', size = 'md', align = 'right', dash = '-' }) => {
-  if (amount === null || amount === undefined) return null;
-  if (Number(amount) === 0) return <span className={`${color} font-black`}>{dash}</span>;
-  return <MoneyStack amount={amount} color={color} size={size} align={align} />;
-};
-
 const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
   const initialTotal = accounts.reduce((total, account) => total + (Number(account.initialBalance) || 0), 0);
   let runBal = initialTotal;
@@ -369,99 +356,113 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
     return { ...t, runBal };
   }).reverse();
 
+  const renderTypeAmount = (t, type) => {
+    if (t.type !== type) return <span className="text-[#64748B]">-</span>;
+    return <Money value={t.amount} />;
+  };
+
   return (
     <>
-      <div className={`${showPreview ? "block" : "hidden md:block"} overflow-x-auto print:overflow-visible`}>
-        <table className="w-full text-left border-collapse bg-white min-w-[980px]">
+      <div className="hidden md:block overflow-x-auto print:hidden">
+        <table className="w-full min-w-[980px] text-left border-collapse bg-white table-fixed">
+          <colgroup>
+            <col style={{width:'11%'}} />
+            <col style={{width:'15%'}} />
+            <col style={{width:'14%'}} />
+            <col style={{width:'20%'}} />
+            <col style={{width:'12%'}} />
+            <col style={{width:'12%'}} />
+            <col style={{width:'8%'}} />
+            <col style={{width:'8%'}} />
+          </colgroup>
           <thead>
-            <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A] print:bg-slate-200 print:text-slate-900 print:border-slate-800">
-              <th className="p-3 font-bold w-28">Tanggal</th>
+            <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A]">
+              <th className="p-3 font-bold whitespace-nowrap">Tanggal</th>
               <th className="p-3 font-bold">Keterangan</th>
               <th className="p-3 font-bold">Kategori</th>
               <th className="p-3 font-bold">Akun</th>
-              <th className="p-3 font-bold text-right">Pemasukan</th>
-              <th className="p-3 font-bold text-right">Pengeluaran</th>
-              <th className="p-3 font-bold text-right">Transfer</th>
-              <th className="p-3 font-bold text-right border-l border-[#E2E8F0] print:border-slate-400">Saldo</th>
-              {!showPreview && <th className="p-3 font-bold text-center w-12 print-hidden">Aksi</th>}
+              <th className="p-3 font-bold text-right whitespace-nowrap">Pemasukan</th>
+              <th className="p-3 font-bold text-right whitespace-nowrap">Pengeluaran</th>
+              <th className="p-3 font-bold text-right whitespace-nowrap">Transfer</th>
+              <th className="p-3 font-bold text-right whitespace-nowrap">Saldo</th>
             </tr>
           </thead>
           <tbody>
             {calcData.length === 0 ? (
-              <tr><td colSpan="9" className="p-8 text-center text-[#64748B] italic print:text-black">Belum ada transaksi.</td></tr>
-            ) : (
-              calcData.map(t => {
-                 const isTransfer = t.type === 'transfer';
-                 const accName = accounts.find(a=>a.id === t.accountId)?.name || 'Dihapus';
-                 const toAccName = accounts.find(a=>a.id === t.toAccountId)?.name || 'Dihapus';
-                 return (
-                  <tr key={t.id} className="border-b border-[#E2E8F0] hover:bg-[#F7F8FA] transition print:border-slate-300 print:break-inside-avoid">
-                    <td className="p-3 text-sm text-[#475569] align-top print:text-slate-800">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
-                    <td className="p-3 align-top font-bold text-[#172033] print:text-slate-900">{t.note}</td>
-                    <td className="p-3 align-top"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0] print:border-none print:p-0 print:bg-transparent print:text-slate-700">{t.category}</span></td>
-                    <td className="p-3 text-xs font-bold align-top print:text-slate-800">
-                      {isTransfer ? <span className="text-[#4F46E5] print:text-slate-900">{accName} → {toAccName}</span> : <span className="text-[#475569] print:text-slate-800">{accName}</span>}
-                    </td>
-                    <td className="p-3 text-right align-top min-w-[92px]">
-                      <MoneyDash amount={t.type === 'income' ? t.amount : 0} color="text-[#16A34A]" size="sm" />
-                    </td>
-                    <td className="p-3 text-right align-top min-w-[92px]">
-                      <MoneyDash amount={t.type === 'expense' ? t.amount : 0} color="text-[#DC2626]" size="sm" />
-                    </td>
-                    <td className="p-3 text-right align-top min-w-[92px]">
-                      <MoneyDash amount={isTransfer ? t.amount : 0} color="text-[#4F46E5]" size="sm" />
-                    </td>
-                    <td className="p-3 text-right align-top border-l border-[#E2E8F0] bg-[#F7F8FA]/50 min-w-[96px]">
-                      <MoneyStack amount={t.runBal} color="text-[#172033]" size="sm" />
-                    </td>
-                    {!showPreview && (
-                      <td className="p-3 text-center align-top print-hidden">
-                        <button onClick={() => onDelete(t.id)} className="p-2 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition"><Trash2 size={14}/></button>
-                      </td>
-                    )}
-                  </tr>
-                 );
-              })
-            )}
+              <tr><td colSpan="8" className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</td></tr>
+            ) : calcData.map(t => {
+              const isTransfer = t.type === 'transfer';
+              const accName = accounts.find(a => a.id === t.accountId)?.name || 'Dihapus';
+              const toAccName = accounts.find(a => a.id === t.toAccountId)?.name || 'Dihapus';
+              return (
+                <tr key={t.id} className="border-b border-[#E2E8F0] hover:bg-[#F7F8FA] transition align-top">
+                  <td className="p-3 text-sm text-[#475569] whitespace-nowrap">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
+                  <td className="p-3 font-bold text-[#172033] break-words">{t.note}</td>
+                  <td className="p-3 break-words"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
+                  <td className="p-3 text-xs font-bold break-words">
+                    {isTransfer ? <span className="text-[#4F46E5]">{accName} → {toAccName}</span> : <span className="text-[#475569]">{accName}</span>}
+                  </td>
+                  <td className="p-3 text-sm font-black text-[#16A34A] text-right whitespace-nowrap">{renderTypeAmount(t,'income')}</td>
+                  <td className="p-3 text-sm font-black text-[#DC2626] text-right whitespace-nowrap">{renderTypeAmount(t,'expense')}</td>
+                  <td className="p-3 text-sm font-black text-[#4F46E5] text-right whitespace-nowrap">{renderTypeAmount(t,'transfer')}</td>
+                  <td className="p-3 text-sm font-bold text-[#172033] text-right whitespace-nowrap">{isTransfer ? <span className="text-[#64748B]">Mutasi</span> : <Money value={t.runBal} />}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      <div className={`${showPreview ? "hidden" : "md:hidden"} space-y-3 p-4 bg-[#F7F8FA] print-hidden`}>
+      <div className={`${showPreview ? 'md:hidden' : 'md:hidden'} space-y-3 p-4 bg-[#F7F8FA]`}>
         {calcData.length === 0 ? (
-           <div className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</div>
-        ) : (
-           calcData.map(t => {
-              const isIncome = t.type === 'income';
-              const isTransfer = t.type === 'transfer';
-              const accName = accounts.find(a=>a.id === t.accountId)?.name || 'Dihapus';
-              const toAccName = accounts.find(a=>a.id === t.toAccountId)?.name || 'Dihapus';
-              return (
-                <div key={t.id} className="bg-white p-4 rounded-xl shadow-sm border border-[#E2E8F0] flex flex-col gap-3 relative">
-                  <div className={`absolute top-0 left-0 w-1.5 h-full ${isIncome ? 'bg-[#16A34A]' : isTransfer ? 'bg-[#4F46E5]' : 'bg-[#DC2626]'}`}></div>
-                  <div className="flex justify-between items-start pl-2">
-                    <div className="pr-2">
-                      <p className="font-bold text-[#172033] leading-tight break-words">{t.note}</p>
-                      <p className="text-[10px] text-[#64748B] mt-1 uppercase font-bold">{t.category} • {t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className={`font-black text-sm ${isIncome ? 'text-[#16A34A]' : isTransfer ? 'text-[#4F46E5]' : 'text-[#DC2626]'}`}>
-                        {isIncome ? '+' : isTransfer ? '↔' : '-'} Rp {t.amount.toLocaleString('id-ID')}
-                      </p>
-                    </div>
+          <div className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</div>
+        ) : calcData.map(t => {
+          const isIncome = t.type === 'income';
+          const isTransfer = t.type === 'transfer';
+          const accName = accounts.find(a => a.id === t.accountId)?.name || 'Dihapus';
+          const toAccName = accounts.find(a => a.id === t.toAccountId)?.name || 'Dihapus';
+          return (
+            <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0] relative overflow-hidden">
+              <div className={`absolute inset-y-0 left-0 w-1.5 ${isIncome ? 'bg-[#16A34A]' : isTransfer ? 'bg-[#4F46E5]' : 'bg-[#DC2626]'}`}></div>
+              <div className="pl-2 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-black text-[#172033] leading-tight break-words">{t.note}</p>
+                    <p className="text-[10px] text-[#64748B] mt-1 uppercase font-bold">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</p>
                   </div>
-                  <div className="flex justify-between items-center pl-2 pt-2 border-t border-[#E2E8F0]">
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-md bg-[#F7F8FA] text-[#475569] border border-[#E2E8F0] flex items-center gap-1">
-                      <Wallet size={10}/> {isTransfer ? `${accName} → ${toAccName}` : accName}
-                    </span>
-                    {!showPreview && (
-                      <button onClick={() => onDelete(t.id)} className="text-[#64748B] hover:text-[#DC2626] p-1"><Trash2 size={16}/></button>
-                    )}
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] text-[#64748B] border border-[#E2E8F0] whitespace-nowrap">{t.category}</span>
+                </div>
+
+                <div className="rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#64748B] mb-1">Akun</p>
+                  <p className="text-sm font-bold text-[#172033] break-words">{isTransfer ? `${accName} → ${toAccName}` : accName}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {isTransfer ? (
+                    <div className="col-span-2 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                      <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">Transfer</p>
+                      <Money value={t.amount} className="text-[#4F46E5] text-base font-black" />
+                    </div>
+                  ) : (
+                    <div className={`rounded-xl border p-3 ${isIncome ? 'border-green-100 bg-green-50' : 'border-red-100 bg-red-50'}`}>
+                      <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">{isIncome ? 'Pemasukan' : 'Pengeluaran'}</p>
+                      <Money value={t.amount} className={`${isIncome ? 'text-[#16A34A]' : 'text-[#DC2626]'} text-base font-black`} />
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
+                    <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">Saldo</p>
+                    <Money value={t.runBal} className="text-[#172033] text-base font-black" />
                   </div>
                 </div>
-              );
-           })
-        )}
+
+                {!showPreview && (
+                  <button onClick={() => onDelete(t.id)} className="w-full pt-2 border-t border-[#E2E8F0] text-xs font-bold text-[#64748B] hover:text-[#DC2626]">Hapus transaksi</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -702,7 +703,7 @@ const TransactionModal = ({ txType, accounts, accountBalances, onClose, onSubmit
             <label className="block text-sm font-bold text-[#64748B] mb-1.5">{txType === 'transfer' ? 'Dari Akun' : 'Akun'}</label>
             <select required value={formData.accountId} onChange={e => setFormData({...formData, accountId: e.target.value})} className="w-full p-3.5 bg-white border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C] transition-all">
               <option value="" disabled>Pilih akun</option>
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} (Rp{(accountBalances[a.id] || 0).toLocaleString('id-ID')})</option>)}
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} (Rp {(accountBalances[a.id] || 0).toLocaleString('id-ID')})</option>)}
             </select>
           </div>
           {txType === 'transfer' && (
@@ -1053,18 +1054,22 @@ export default function App() {
   }, [transactions, reportPeriod, customDates]);
 
   const summary = useMemo(() => {
-    let income = 0; let expense = 0; let transfer = 0;
+    let income = 0; let expense = 0; let savings = 0; let transfer = 0;
     const sourceTxs = activeTab === 'dashboard' 
       ? transactions.filter(t => new Date(t.timestamp).getMonth() === new Date().getMonth() && new Date(t.timestamp).getFullYear() === new Date().getFullYear()) 
       : filteredTransactions;
     
     sourceTxs.forEach(t => {
-       if (t.type === 'income') income += Number(t.amount) || 0;
-       if (t.type === 'expense') expense += Number(t.amount) || 0;
-       if (t.type === 'transfer') transfer += Number(t.amount) || 0;
+       if (t.type === 'income') income += t.amount;
+       if (t.type === 'expense') expense += t.amount;
+       if (t.type === 'transfer') {
+          transfer += t.amount;
+          const targetAcc = accounts.find(a => a.id === t.toAccountId);
+          if(targetAcc && targetAcc.type === 'Tabungan') savings += t.amount;
+       }
     });
-    return { income, expense, transfer, netWorth };
-  }, [transactions, filteredTransactions, activeTab, netWorth]);
+    return { income, expense, savings, transfer, netWorth };
+  }, [transactions, filteredTransactions, activeTab, accounts, netWorth]);
 
   const expenseChartData = useMemo(() => {
     const source = activeTab === 'reports' ? filteredTransactions : transactions.filter(t => new Date(t.timestamp).getMonth() === new Date().getMonth());
@@ -1166,76 +1171,54 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    const headers = [
-      "ID Transaksi",
-      "Tanggal",
-      "Tipe",
-      "Keterangan",
-      "Kategori",
-      "Akun Sumber",
-      "Akun Tujuan",
-      "Pemasukan (Rp)",
-      "Pengeluaran (Rp)",
-      "Transfer (Rp)",
-      "Saldo Bersih Setelah Transaksi (Rp)"
-    ];
-
-    // Ekspor dalam urutan kronologis agar saldo mudah dibaca.
-    const sortedTransactions = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
-
-    // Hitung saldo bersih keseluruhan berdasarkan saldo awal seluruh akun.
-    let runningBalance = accounts.reduce(
-      (total, account) => total + (Number(account.initialBalance) || 0),
-      0
-    );
-
     const escapeCSV = (value) => {
       const text = String(value ?? '');
-      return `"${text.replace(/"/g, '""')}"`;
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     };
 
-    const formatDate = (timestamp, dateStr) => {
-      if (dateStr) return dateStr;
-      return new Date(timestamp).toLocaleDateString('id-ID');
-    };
+    const sorted = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
+    const initialTotal = accounts.reduce((total, account) => total + (Number(account.initialBalance) || 0), 0);
+    let runningBalance = initialTotal;
 
-    const rows = sortedTransactions.map(t => {
+    const headers = [
+      'ID Transaksi', 'Tanggal', 'Tipe', 'Keterangan', 'Kategori',
+      'Akun Sumber', 'Akun Tujuan', 'Pemasukan (Rp)', 'Pengeluaran (Rp)',
+      'Transfer (Rp)', 'Saldo Bersih Setelah Transaksi (Rp)'
+    ];
+
+    const rows = sorted.map(t => {
+      const amount = Number(t.amount) || 0;
+      if (t.type === 'income') runningBalance += amount;
+      if (t.type === 'expense') runningBalance -= amount;
+
       const srcAcc = accounts.find(a => a.id === t.accountId)?.name || '-';
       const destAcc = accounts.find(a => a.id === t.toAccountId)?.name || '-';
-      const income = t.type === 'income' ? Number(t.amount) || 0 : 0;
-      const expense = t.type === 'expense' ? Number(t.amount) || 0 : 0;
-      const transfer = t.type === 'transfer' ? Number(t.amount) || 0 : 0;
-
-      // Transfer hanya memindahkan uang antar akun, sehingga tidak menambah/mengurangi saldo bersih.
-      if (t.type === 'income') runningBalance += income;
-      if (t.type === 'expense') runningBalance -= expense;
 
       return [
-        escapeCSV(t.id),
-        escapeCSV(formatDate(t.timestamp, t.dateStr)),
-        escapeCSV(t.type.toUpperCase()),
-        escapeCSV(t.note),
-        escapeCSV(t.category),
-        escapeCSV(srcAcc),
-        escapeCSV(destAcc),
-        income,
-        expense,
-        transfer,
+        t.id,
+        t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID'),
+        t.type.toUpperCase(),
+        t.note,
+        t.category,
+        srcAcc,
+        destAcc,
+        t.type === 'income' ? amount : 0,
+        t.type === 'expense' ? amount : 0,
+        t.type === 'transfer' ? amount : 0,
         runningBalance
-      ].join(',');
+      ].map(escapeCSV).join(',');
     });
 
-    // BOM membantu Excel membaca UTF-8 dengan benar.
-    const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const csv = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Laporan_DompetKu_${reportPeriod.replace(/ /g, '_')}.csv`;
+    link.download = `Laporan_DompetKu_${reportPeriod.replace(/\s+/g, '_')}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const executePrint = () => {
@@ -1262,7 +1245,7 @@ export default function App() {
                <div key={rec.id} className="flex flex-col md:flex-row md:items-center justify-between bg-white p-3 rounded-xl border border-[#F2C94C]">
                  <div>
                    <p className="font-bold text-[#172033] text-sm">{rec.note}</p>
-                   <p className="text-[#DC2626] font-black text-sm">Rp {rec.amount.toLocaleString('id-ID')} <span className="text-[10px] text-[#64748B] font-bold uppercase ml-1">({rec.category})</span></p>
+                   <p className="text-[#DC2626] font-black text-sm"><Money value={rec.amount} /> <span className="text-[10px] text-[#64748B] font-bold uppercase ml-1">({rec.category})</span></p>
                  </div>
                  <div className="flex gap-2 mt-2 md:mt-0">
                     <button onClick={() => processRecurring(rec.id, 'confirm')} className="px-3 py-1.5 bg-[#16A34A] text-white text-xs font-bold rounded-lg shadow hover:bg-green-700 flex items-center gap-1"><Check size={14}/> Setuju</button>
@@ -1280,18 +1263,15 @@ export default function App() {
             <Landmark size={120} className="text-[#D4A72C]"/>
          </div>
          <p className="text-[#D4A72C] text-xs font-bold uppercase tracking-widest mb-1 relative z-10">Total Kekayaan Bersih</p>
-         <div className="relative z-10 mb-6 text-white">
-           <span className="block text-sm md:text-base font-bold opacity-80">Rp</span>
-           <span className="block text-3xl md:text-4xl font-black tracking-tight">{summary.netWorth.toLocaleString('id-ID')}</span>
-         </div>
+         <h2 className="text-3xl md:text-4xl font-black text-white relative z-10 mb-6 drop-shadow-md whitespace-nowrap"><Money value={summary.netWorth} /></h2>
          <div className="grid grid-cols-2 gap-4 relative z-10 border-t border-[#0F172A] pt-5">
             <div>
                <p className="text-[#94A3B8] text-[10px] font-bold uppercase flex items-center gap-1"><TrendingUp size={12} className="text-[#16A34A]"/> Pemasukan Bulan Ini</p>
-               <MoneyStack amount={summary.income} color="text-[#16A34A]" size="md" align="left" className="mt-1" />
+               <p className="text-[#16A34A] font-bold text-lg mt-1 whitespace-nowrap"><Money value={summary.income} /></p>
             </div>
             <div>
                <p className="text-[#94A3B8] text-[10px] font-bold uppercase flex items-center gap-1"><TrendingDown size={12} className="text-[#DC2626]"/> Pengeluaran Bulan Ini</p>
-               <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="md" align="left" className="mt-1" />
+               <p className="text-[#DC2626] font-bold text-lg mt-1 whitespace-nowrap"><Money value={summary.expense} /></p>
             </div>
          </div>
       </div>
@@ -1306,7 +1286,9 @@ export default function App() {
                    <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1 bg-[#F7F8FA] px-2 py-0.5 rounded-full inline-block border border-[#CBD5E1]">{acc.type}</p>
                    <p className="font-bold text-[#172033] line-clamp-1 mb-2 leading-tight">{acc.name}</p>
                  </div>
-                 <MoneyStack amount={accountBalances[acc.id] || 0} color="text-[#B8860B]" size="md" align="left" className="mt-2" />
+                 <p className="font-black text-[#B8860B] whitespace-nowrap overflow-hidden text-ellipsis" title={`Rp ${(accountBalances[acc.id] || 0).toLocaleString('id-ID')}`}>
+                   <Money value={(accountBalances[acc.id] || 0)} />
+                 </p>
               </div>
             ))}
             <button onClick={() => setShowAddAccount(true)} className="min-w-[140px] border-2 border-dashed border-[#CBD5E1] rounded-2xl flex flex-col items-center justify-center text-[#64748B] bg-[#F7F8FA] hover:bg-white transition snap-start shrink-0 active:scale-95 group">
@@ -1441,38 +1423,37 @@ export default function App() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
              <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Pemasukan ({reportPeriod})</p>
-             <MoneyStack amount={summary.income} color="text-[#16A34A]" size="lg" align="left" className="mt-2" />
+             <h2 className="text-xl font-black text-[#16A34A] whitespace-nowrap overflow-hidden text-ellipsis"><Money value={summary.income} /></h2>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
              <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Pengeluaran ({reportPeriod})</p>
-             <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="lg" align="left" className="mt-2" />
+             <h2 className="text-xl font-black text-[#DC2626] whitespace-nowrap overflow-hidden text-ellipsis"><Money value={summary.expense} /></h2>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-[#E2E8F0]">
-             <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Transfer ({reportPeriod})</p>
-             <MoneyStack amount={summary.transfer} color="text-[#4F46E5]" size="lg" align="left" className="mt-2" />
+             <p className="text-[10px] text-[#64748B] font-bold uppercase mb-1">Total Transfer ({reportPeriod})</p>
+             <h2 className="text-xl font-black text-[#4F46E5] whitespace-nowrap overflow-hidden text-ellipsis"><Money value={summary.transfer} /></h2>
           </div>
           <div className="bg-[#172033] p-4 rounded-2xl shadow-sm border border-[#0F172A]">
              <p className="text-[10px] text-[#D4A72C] font-bold uppercase mb-1">Total Kekayaan (Semua Waktu)</p>
-             <MoneyStack amount={summary.netWorth} color="text-white" size="lg" align="left" className="mt-2" />
+             <h2 className="text-xl font-black text-white whitespace-nowrap overflow-hidden text-ellipsis"><Money value={summary.netWorth} /></h2>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
            <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#E2E8F0] flex flex-col justify-center">
-              <h3 className="font-bold text-[#172033] mb-2 flex items-center gap-2"><BarChart3 size={18} className="text-[#D4A72C]"/> Pemasukan vs Pengeluaran</h3>
-              <p className="text-[11px] text-[#64748B] mb-6">Transfer tidak dihitung sebagai pemasukan atau pengeluaran karena hanya memindahkan dana antar akun.</p>
+              <h3 className="font-bold text-[#172033] mb-6 flex items-center gap-2"><BarChart3 size={18} className="text-[#D4A72C]"/> Pemasukan vs Pengeluaran</h3>
               <div className="space-y-6">
                 <div>
                    <div className="flex justify-between text-xs font-bold mb-1">
                      <span className="text-[#64748B]">PEMASUKAN</span>
-                     <MoneyStack amount={incomeTotal} color="text-[#16A34A]" size="sm" align="right" />
+                     <span className="text-[#16A34A]"><Money value={incomeTotal} /></span>
                    </div>
                    <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-4"><div className="bg-[#16A34A] h-full rounded-full" style={{width:`${incPct}%`}}></div></div>
                 </div>
                 <div>
                    <div className="flex justify-between text-xs font-bold mb-1">
                      <span className="text-[#64748B]">PENGELUARAN</span>
-                     <MoneyStack amount={expenseTotal} color="text-[#DC2626]" size="sm" align="right" />
+                     <span className="text-[#DC2626]"><Money value={expenseTotal} /></span>
                    </div>
                    <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-4"><div className="bg-[#DC2626] h-full rounded-full" style={{width:`${expPct}%`}}></div></div>
                 </div>
@@ -1489,7 +1470,7 @@ export default function App() {
                      <div key={i}>
                        <div className="flex justify-between text-xs mb-1">
                          <span className="font-bold text-[#172033]">{d.category}</span>
-                         <span className="font-black text-[#172033]">Rp {d.amount.toLocaleString('id-ID')} <span className="text-[#64748B] font-bold ml-1">({d.percentage.toFixed(1)}%)</span></span>
+                         <span className="font-black text-[#172033]"><Money value={d.amount} /> <span className="text-[#64748B] font-bold ml-1">({d.percentage.toFixed(1)}%)</span></span>
                        </div>
                        <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-2">
                          <div className="bg-[#DC2626] h-full rounded-full" style={{ width: `${d.barWidth}%` }}></div>
@@ -1567,15 +1548,15 @@ export default function App() {
                          </span>
                       </div>
                       <div className="flex justify-between text-xs font-bold text-[#64748B] mb-2 pl-3">
-                         <span>Terpakai: Rp {b.used.toLocaleString('id-ID')}</span>
-                         <span>Batas: Rp {b.limit.toLocaleString('id-ID')}</span>
+                         <span>Terpakai: <Money value={b.used} /></span>
+                         <span>Batas: <Money value={b.limit} /></span>
                       </div>
                       <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-4 overflow-hidden ml-3 pr-3">
                         <div className={`${statusColor} h-full rounded-full transition-all duration-1000`} style={{ width: `${Math.min(b.percent, 100)}%` }}></div>
                       </div>
                     </div>
                     <div className="flex justify-between items-end mt-3 pl-3">
-                        <p className="text-[10px] text-[#475569] font-bold uppercase">Sisa: Rp {Math.max(0, b.limit - b.used).toLocaleString('id-ID')}</p>
+                        <p className="text-[10px] text-[#475569] font-bold uppercase">Sisa: <Money value={Math.max(0, b.limit - b.used)} /></p>
                         <p className={`text-right text-xs font-black ${textColor}`}>{b.percent.toFixed(1)}% Terpakai</p>
                      </div>
                      <div className="flex justify-end gap-2 mt-4 pl-3 pt-3 border-t border-[#E2E8F0]">
@@ -1619,8 +1600,8 @@ export default function App() {
                       <div className="bg-[#16A34A] h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(pct, 100)}%` }}></div>
                     </div>
                     <div className="flex justify-between text-xs font-bold text-[#475569] mb-4">
-                       <span>Terkumpul: <span className="text-[#172033]">Rp {g.collectedAmount.toLocaleString('id-ID')}</span></span>
-                       <span>Dari: <span className="text-[#172033]">Rp {g.targetAmount.toLocaleString('id-ID')}</span></span>
+                       <span>Terkumpul: <span className="text-[#172033]"><Money value={g.collectedAmount} /></span></span>
+                       <span>Dari: <span className="text-[#172033]"><Money value={g.targetAmount} /></span></span>
                     </div>
                     <button onClick={async () => {const amt = prompt('Tambah dana (Rp):'); if(amt && !isNaN(amt)){ const updatedGoal = { ...g, collectedAmount: g.collectedAmount + parseInt(amt) }; await saveStoreData('goals', updatedGoal, user.id); setGoals(goals.map(x=>x.id===g.id?updatedGoal:x)); }}} className="w-full py-3 bg-[#172033] text-white text-xs font-bold rounded-xl hover:bg-[#0F172A] transition shadow-md">
                       Update Progress / Tambah Dana
@@ -1647,7 +1628,7 @@ export default function App() {
                <div key={r.id} className={`p-4 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${r.active ? 'bg-white border-[#E2E8F0]' : 'bg-[#F7F8FA] border-[#CBD5E1] opacity-60'}`}>
                   <div>
                     <p className="font-bold text-[#172033] text-lg">{r.note}</p>
-                    <p className="text-xs font-bold text-[#475569] uppercase mt-1">{r.type} • Rp {r.amount.toLocaleString('id-ID')} • {r.frequency}</p>
+                    <p className="text-xs font-bold text-[#475569] uppercase mt-1">{r.type} • <Money value={r.amount} /> • {r.frequency}</p>
                     <p className="text-[10px] font-black text-[#B8860B] mt-1.5 bg-[#FFFBEB] inline-block px-2 py-0.5 rounded border border-[#F2C94C]">Next: {new Date(r.nextTimestamp).toLocaleDateString('id-ID')}</p>
                   </div>
                   <div className="flex gap-2">
@@ -1974,360 +1955,208 @@ export default function App() {
   }
 
   if (showPreview) {
-    const printRows = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
-    let printRunningBalance = accounts.reduce(
-      (total, account) => total + (Number(account.initialBalance) || 0),
-      0
-    );
-
-    const printRowsWithBalance = printRows.map((t) => {
+    const previewRows = [...filteredTransactions].sort((a, b) => a.timestamp - b.timestamp);
+    const initialTotal = accounts.reduce((total, account) => total + (Number(account.initialBalance) || 0), 0);
+    let previewBalance = initialTotal;
+    const rowsWithBalance = previewRows.map(t => {
       const amount = Number(t.amount) || 0;
-      if (t.type === 'income') printRunningBalance += amount;
-      if (t.type === 'expense') printRunningBalance -= amount;
+      if (t.type === 'income') previewBalance += amount;
+      if (t.type === 'expense') previewBalance -= amount;
+      return { ...t, runBal: previewBalance };
+    });
 
-      return {
-        ...t,
-        printBalance: printRunningBalance,
-        isTransfer: t.type === 'transfer',
-        accountName: accounts.find((a) => a.id === t.accountId)?.name || 'Dihapus',
-        destinationName: accounts.find((a) => a.id === t.toAccountId)?.name || 'Dihapus',
-      };
+    const getAccountNames = (t) => ({
+      src: accounts.find(a => a.id === t.accountId)?.name || 'Dihapus',
+      dest: accounts.find(a => a.id === t.toAccountId)?.name || 'Dihapus'
     });
 
     return (
-      <div className="min-h-screen bg-[#E5E7EB] font-sans print:bg-white print:min-h-0">
-        <style dangerouslySetInnerHTML={{ __html: `
-          @media print {
-            @page {
-              size: A4 portrait;
-              margin: 7mm;
-            }
-
-            html, body {
-              background: #fff !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              width: 100% !important;
-              height: auto !important;
-            }
-
-            body {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-
-            .print-hidden {
-              display: none !important;
-            }
-
-            .dompetku-print-page {
-              display: block !important;
-              width: 100% !important;
-              max-width: none !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              background: #fff !important;
-            }
-
-            .dompetku-print-sheet {
-              width: 100% !important;
-              max-width: none !important;
-              margin: 0 !important;
-              padding: 4mm !important;
-              box-shadow: none !important;
-              border: 0 !important;
-              border-radius: 0 !important;
-              background: #fff !important;
-            }
-
-            .print-summary {
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-            }
-
-            .print-ledger {
-              margin-top: 5mm !important;
-              break-inside: auto !important;
-              page-break-inside: auto !important;
-              overflow: visible !important;
-            }
-
-            .print-ledger-table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-              table-layout: fixed !important;
-              page-break-inside: auto !important;
-              break-inside: auto !important;
-            }
-
-            .print-ledger-table thead {
-              display: table-header-group !important;
-            }
-
-            .print-ledger-table tbody {
-              display: table-row-group !important;
-            }
-
-            .print-ledger-table tr {
-              display: table-row !important;
-              height: auto !important;
-              min-height: 0 !important;
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-            }
-
-            .print-ledger-table th,
-            .print-ledger-table td {
-              display: table-cell !important;
-              height: auto !important;
-              min-height: 0 !important;
-              padding: 4px 5px !important;
-              font-size: 8.5px !important;
-              line-height: 1.25 !important;
-              vertical-align: middle !important;
-              white-space: normal !important;
-              word-break: normal !important;
-              overflow-wrap: anywhere !important;
-            }
-
-            .print-ledger-table th:nth-child(1),
-            .print-ledger-table td:nth-child(1) { width: 10%; }
-
-            .print-ledger-table th:nth-child(2),
-            .print-ledger-table td:nth-child(2) { width: 16%; }
-
-            .print-ledger-table th:nth-child(3),
-            .print-ledger-table td:nth-child(3) { width: 13%; }
-
-            .print-ledger-table th:nth-child(4),
-            .print-ledger-table td:nth-child(4) { width: 18%; }
-
-            .print-ledger-table th:nth-child(5),
-            .print-ledger-table td:nth-child(5) { width: 11%; }
-
-            .print-ledger-table th:nth-child(6),
-            .print-ledger-table td:nth-child(6) { width: 11%; }
-
-            .print-ledger-table th:nth-child(7),
-            .print-ledger-table td:nth-child(7) { width: 11%; }
-
-            .print-ledger-table th:nth-child(8),
-            .print-ledger-table td:nth-child(8) { width: 10%; }
-
-            .print-footer {
-              margin-top: 5mm !important;
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-            }
-
-            .print-card-grid {
-              display: grid !important;
-              grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-              gap: 3mm !important;
-            }
-
-            .print-card {
-              padding: 3mm !important;
-            }
-
-            h1 { font-size: 18px !important; }
-            h2 { font-size: 12px !important; }
-            h3 { font-size: 10px !important; }
-
-            .print-header {
-              margin-bottom: 5mm !important;
-              padding-bottom: 4mm !important;
-            }
-
-            .preview-mobile-only { display: none !important; }
-            .preview-desktop-only { display: table !important; }
-          }
-
-          .preview-mobile-only { display: none; }
-          .preview-desktop-only { display: table; }
-
+      <div className="min-h-screen bg-[#F1F5F9] font-sans p-0 md:p-6 flex justify-center print:p-0 print:bg-white">
+        <style dangerouslySetInnerHTML={{__html: `
+          .money-inline { display:inline-flex; align-items:baseline; gap:4px; white-space:nowrap; }
+          .money-inline > span:first-child { flex:0 0 auto; }
+          .money-inline > span:last-child { flex:0 0 auto; }
+          .report-screen { display:block; }
+          .report-print-only { display:none; }
+          .preview-table-wrap { overflow-x:auto; }
+          .preview-table { width:100%; min-width:900px; table-layout:fixed; border-collapse:collapse; }
+          .preview-table th, .preview-table td { padding:10px 8px; vertical-align:top; }
+          .preview-table .money-cell { white-space:nowrap; }
           @media (max-width: 767px) {
-            .dompetku-print-page { padding: 0 !important; display: block !important; }
-            .dompetku-print-sheet { margin-top: 76px !important; padding: 18px !important; border-radius: 0 !important; box-shadow: none !important; max-width: 100% !important; }
-            .print-header { align-items: stretch !important; }
-            .print-header > div:first-child { flex-direction: column !important; align-items: flex-start !important; }
-            .print-header .text-right { width: 100% !important; text-align: left !important; }
-            .print-header h1 { font-size: 28px !important; }
-            .print-header p { font-size: 11px !important; line-height: 1.25 !important; }
-            .print-summary h3, .print-ledger > h3 { font-size: 16px !important; }
-            .print-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
-            .print-card { padding: 12px !important; min-width: 0 !important; }
-            .preview-desktop-only { display: none !important; }
-            .preview-mobile-only { display: block !important; }
+            .preview-sheet { border-radius:0 !important; box-shadow:none !important; border:0 !important; width:100% !important; }
+            .preview-toolbar { position:sticky !important; top:0 !important; border-radius:0 !important; }
+            .preview-header { flex-direction:column !important; align-items:flex-start !important; gap:12px !important; }
+            .preview-header-meta { width:100% !important; text-align:left !important; }
+            .preview-summary { grid-template-columns:1fr 1fr !important; }
+          }
+          @media print {
+            body { background:#fff !important; margin:0 !important; padding:0 !important; }
+            .print-hidden { display:none !important; }
+            .report-screen { display:none !important; }
+            .report-print-only { display:block !important; }
+            .preview-sheet { width:100% !important; max-width:none !important; margin:0 !important; padding:8mm !important; border:0 !important; box-shadow:none !important; }
+            .preview-header { display:flex !important; flex-direction:row !important; justify-content:space-between !important; align-items:flex-end !important; gap:12px !important; }
+            .preview-summary { display:grid !important; grid-template-columns:repeat(4, 1fr) !important; gap:8px !important; }
+            .preview-summary-card { padding:9px !important; }
+            .preview-summary-card h2 { font-size:14px !important; line-height:1.15 !important; }
+            .preview-section-title { font-size:16px !important; margin:16px 0 8px !important; }
+            .preview-table { min-width:0 !important; width:100% !important; table-layout:fixed !important; }
+            .preview-table th, .preview-table td { font-size:8px !important; padding:5px !important; word-break:normal !important; overflow-wrap:anywhere !important; }
+            .preview-table th:nth-child(1), .preview-table td:nth-child(1) { width:10% !important; }
+            .preview-table th:nth-child(2), .preview-table td:nth-child(2) { width:15% !important; }
+            .preview-table th:nth-child(3), .preview-table td:nth-child(3) { width:12% !important; }
+            .preview-table th:nth-child(4), .preview-table td:nth-child(4) { width:20% !important; }
+            .preview-table th:nth-child(5), .preview-table td:nth-child(5) { width:12% !important; }
+            .preview-table th:nth-child(6), .preview-table td:nth-child(6) { width:12% !important; }
+            .preview-table th:nth-child(7), .preview-table td:nth-child(7) { width:10% !important; }
+            .preview-table th:nth-child(8), .preview-table td:nth-child(8) { width:9% !important; }
+            .preview-table thead { display:table-header-group !important; }
+            .preview-table tbody { display:table-row-group !important; }
+            .preview-table tr { break-inside:avoid; page-break-inside:avoid; }
+            .preview-footer { margin-top:18px !important; padding-top:8px !important; }
+            @page { size:A4 portrait; margin:8mm; }
           }
         `}} />
 
-        <div className="fixed top-4 inset-x-0 mx-auto max-w-4xl flex justify-between items-center bg-[#172033] text-white p-4 rounded-2xl shadow-2xl z-50 print-hidden">
-          <h2 className="font-bold flex items-center gap-2 text-[#D4A72C]">
-            <Eye size={18}/> Preview Cetak
-          </h2>
+        <div className="preview-toolbar fixed top-3 left-3 right-3 md:left-auto md:right-auto md:w-[calc(100%-24px)] md:max-w-5xl bg-[#172033] text-white p-3 md:p-4 rounded-2xl shadow-2xl z-50 print-hidden flex items-center justify-between gap-3">
+          <h2 className="font-black flex items-center gap-2 text-[#D4A72C] text-sm md:text-base"><Eye size={18}/> Preview Cetak</h2>
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowPreview(false)}
-              className="px-4 py-2 bg-transparent border border-white text-white hover:bg-white/10 rounded-lg font-bold text-sm transition"
-            >
-              Tutup
-            </button>
-            <button
-              type="button"
-              onClick={executePrint}
-              className="px-4 py-2 bg-[#D4A72C] hover:bg-[#F2C94C] text-[#172033] rounded-lg font-bold text-sm flex items-center gap-2 transition"
-            >
-              <Printer size={16} /> Print / Cetak
-            </button>
+            <button onClick={() => setShowPreview(false)} className="px-3 md:px-4 py-2 bg-transparent border border-white text-white rounded-lg font-bold text-xs md:text-sm">Tutup</button>
+            <button type="button" onClick={executePrint} className="px-3 md:px-4 py-2 bg-[#D4A72C] text-[#172033] rounded-lg font-bold text-xs md:text-sm flex items-center gap-2"><Printer size={15}/> Print / Cetak</button>
           </div>
         </div>
 
-        <div className="dompetku-print-page min-h-screen flex justify-center p-4 md:p-8 print:p-0">
-          <div
-            id="dompetku-report"
-            className="dompetku-print-sheet bg-white w-full max-w-4xl shadow-lg mt-20 p-8 md:p-12 border border-[#E2E8F0] rounded-xl"
-          >
-            <div className="print-header border-b-4 border-[#172033] pb-5 mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
-              <div className="flex items-center gap-4 min-w-0">
-                <UserAvatar user={user} size={16} textClass="text-2xl" />
-                <div className="min-w-0">
-                  <h1 className="text-4xl font-black uppercase tracking-widest text-[#172033]">DOMPETKU</h1>
-                  <p className="text-[#475569] mt-1 font-bold text-lg tracking-widest">LAPORAN KEUANGAN PRIBADI</p>
-                </div>
-              </div>
-
-              <div className="text-right text-sm text-[#475569] font-medium bg-[#F7F8FA] p-3 rounded-lg border border-[#E2E8F0] shrink-0">
-                <p>Pemilik Akun: <span className="font-bold text-[#172033] uppercase">{user?.name}</span></p>
-                <p>Periode: <span className="font-bold text-[#172033] uppercase">{reportPeriod}</span></p>
-                <p>Tanggal Cetak: <span className="font-bold text-[#172033]">{new Date().toLocaleDateString('id-ID')}</span></p>
+        <div id="dompetku-report" className="preview-sheet bg-white max-w-5xl w-full shadow-lg mt-20 md:mt-6 p-4 md:p-10 border border-[#E2E8F0] rounded-2xl md:rounded-3xl">
+          <div className="preview-header border-b-4 border-[#172033] pb-5 mb-6 flex justify-between items-end">
+            <div className="flex items-center gap-3 min-w-0">
+              <UserAvatar user={user} size={14} textClass="text-2xl" />
+              <div className="min-w-0">
+                <h1 className="text-3xl md:text-5xl font-black uppercase tracking-[0.16em] text-[#172033] leading-none">DOMPETKU</h1>
+                <p className="text-[#475569] mt-2 font-bold text-sm md:text-lg tracking-[0.12em]">LAPORAN KEUANGAN PRIBADI</p>
               </div>
             </div>
-
-            <section className="print-summary">
-              <h3 className="font-black text-xl text-[#172033] mb-3 uppercase tracking-wider">Ringkasan Keuangan</h3>
-
-              <div className="print-card-grid grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pemasukan</p>
-                  <MoneyStack amount={summary.income} color="text-[#16A34A]" size="lg" align="left" className="mt-1" />
-                </div>
-
-                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pengeluaran</p>
-                  <MoneyStack amount={summary.expense} color="text-[#DC2626]" size="lg" align="left" className="mt-1" />
-                </div>
-
-                <div className="print-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
-                  <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
-                  <MoneyStack amount={summary.transfer} color="text-[#4F46E5]" size="lg" align="left" className="mt-1" />
-                </div>
-
-                <div className="print-card border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white">
-                  <p className="text-[10px] font-bold uppercase text-[#D4A72C] mb-1">Kekayaan Bersih (Total)</p>
-                  <MoneyStack amount={summary.netWorth} color="text-white" size="lg" align="left" className="mt-1" />
-                </div>
-              </div>
-            </section>
-
-            <section className="print-ledger">
-              <h3 className="font-black text-xl text-[#172033] mb-3 uppercase tracking-wider">Buku Besar Transaksi</h3>
-
-              <div className="border-2 border-[#172033] rounded-xl overflow-visible">
-                <div className="bg-[#172033] text-white p-3">
-                  <h3 className="font-bold uppercase tracking-widest text-sm text-center">
-                    Rincian Transaksi ({reportPeriod})
-                  </h3>
-                </div>
-
-                <div className="preview-mobile-only p-3 space-y-3">
-                  {printRowsWithBalance.length === 0 ? (
-                    <div className="text-center text-[#64748B] italic py-6">Belum ada transaksi pada periode ini.</div>
-                  ) : (
-                    printRowsWithBalance.map((t) => (
-                      <div key={`mobile-${t.id}`} className="rounded-xl border border-[#CBD5E1] bg-white p-4 shadow-sm">
-                        <div>
-                          <p className="text-[11px] font-bold text-[#64748B]">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</p>
-                          <p className="text-base font-black text-[#172033] mt-1 break-words">{t.note}</p>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] border border-[#E2E8F0] text-[#64748B]">{t.category || 'Lainnya'}</span>
-                            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] border border-[#E2E8F0] text-[#64748B]">{t.isTransfer ? 'Transfer' : t.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}</span>
-                          </div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-[#E2E8F0] grid grid-cols-2 gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[10px] uppercase font-bold text-[#64748B]">Akun</p>
-                            <p className="text-xs font-bold text-[#172033] mt-1 break-words">{t.isTransfer ? `${t.accountName} → ${t.destinationName}` : t.accountName}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[10px] uppercase font-bold text-[#64748B]">Nilai</p>
-                            <MoneyDash amount={t.amount} color={t.isTransfer ? 'text-[#4F46E5]' : t.type === 'income' ? 'text-[#16A34A]' : 'text-[#DC2626]'} size="sm" />
-                          </div>
-                        </div>
-                        <div className="mt-3 pt-3 border-t border-[#E2E8F0] flex items-end justify-between gap-3">
-                          <span className="text-[10px] uppercase font-bold text-[#64748B]">Saldo setelah transaksi</span>
-                          <MoneyStack amount={t.printBalance} color="text-[#172033]" size="sm" />
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <table className="print-ledger-table preview-desktop-only w-full text-left bg-white">
-                  <thead>
-                    <tr className="bg-[#F7F8FA] text-[#172033] border-b-2 border-[#172033]">
-                      <th className="font-bold">Tanggal</th>
-                      <th className="font-bold">Keterangan</th>
-                      <th className="font-bold">Kategori</th>
-                      <th className="font-bold">Akun</th>
-                      <th className="font-bold text-right">Pemasukan</th>
-                      <th className="font-bold text-right">Pengeluaran</th>
-                      <th className="font-bold text-right">Transfer</th>
-                      <th className="font-bold text-right">Saldo</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {printRowsWithBalance.length === 0 ? (
-                      <tr>
-                        <td colSpan="8" className="text-center text-[#64748B] italic py-4">
-                          Belum ada transaksi pada periode ini.
-                        </td>
-                      </tr>
-                    ) : (
-                      printRowsWithBalance.map((t) => (
-                        <tr key={t.id} className="border-b border-[#CBD5E1]">
-                          <td className="text-[#475569]">
-                            {t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}
-                          </td>
-                          <td className="font-bold text-[#172033]">{t.note}</td>
-                          <td className="text-[#475569]">{t.category || '-'}</td>
-                          <td className="font-bold text-[#475569]">
-                            {t.isTransfer ? `${t.accountName} → ${t.destinationName}` : t.accountName}
-                          </td>
-                          <td className="text-right font-bold text-[#16A34A]">
-                            <MoneyDash amount={t.type === 'income' ? t.amount : 0} color="text-[#16A34A]" size="sm" />
-                          </td>
-                          <td className="text-right font-bold text-[#DC2626]">
-                            <MoneyDash amount={t.type === 'expense' ? t.amount : 0} color="text-[#DC2626]" size="sm" />
-                          </td>
-                          <td className="text-right font-bold text-[#4F46E5]">
-                            <MoneyDash amount={t.isTransfer ? t.amount : 0} color="text-[#4F46E5]" size="sm" />
-                          </td>
-                          <td className="text-right font-bold text-[#172033]">
-                            <MoneyStack amount={t.printBalance} color="text-[#172033]" size="sm" />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <div className="print-footer mt-8 text-center text-xs text-[#64748B] font-bold border-t-2 border-[#E2E8F0] pt-5">
-              <p>DompetKu v1.0 • © 2026 Hamisah • All Rights Reserved</p>
+            <div className="preview-header-meta shrink-0 text-right text-xs md:text-sm text-[#475569] font-medium bg-[#F7F8FA] p-3 rounded-lg border border-[#E2E8F0]">
+              <p>Pemilik Akun: <span className="font-bold text-[#172033] uppercase">{user?.name}</span></p>
+              <p>Periode: <span className="font-bold text-[#172033] uppercase">{reportPeriod}</span></p>
+              <p>Tanggal Cetak: <span className="font-bold text-[#172033]">{new Date().toLocaleDateString('id-ID')}</span></p>
             </div>
+          </div>
+
+          <h3 className="preview-section-title font-black text-xl text-[#172033] mb-4 uppercase tracking-wider">Ringkasan Keuangan</h3>
+          <div className="preview-summary grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-7">
+            <div className="preview-summary-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+              <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pemasukan</p>
+              <Money value={summary.income} className="text-[#16A34A] text-lg md:text-xl font-black" />
+            </div>
+            <div className="preview-summary-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+              <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Pengeluaran</p>
+              <Money value={summary.expense} className="text-[#DC2626] text-lg md:text-xl font-black" />
+            </div>
+            <div className="preview-summary-card border border-[#CBD5E1] p-4 rounded-xl bg-[#F7F8FA]">
+              <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Total Transfer</p>
+              <Money value={summary.transfer} className="text-[#4F46E5] text-lg md:text-xl font-black" />
+            </div>
+            <div className="preview-summary-card border-2 border-[#172033] p-4 rounded-xl bg-[#172033] text-white">
+              <p className="text-[10px] font-bold uppercase text-[#D4A72C] mb-1">Kekayaan Bersih (Total)</p>
+              <Money value={summary.netWorth} className="text-white text-lg md:text-xl font-black" />
+            </div>
+          </div>
+
+          <h3 className="preview-section-title font-black text-xl text-[#172033] mb-4 uppercase tracking-wider">Buku Besar Transaksi</h3>
+
+          <div className="report-screen">
+            <div className="hidden md:block preview-table-wrap border-2 border-[#172033] rounded-xl overflow-hidden">
+              <table className="preview-table bg-white">
+                <colgroup>
+                  <col style={{width:'10%'}}/><col style={{width:'15%'}}/><col style={{width:'12%'}}/><col style={{width:'20%'}}/>
+                  <col style={{width:'12%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'9%'}}/>
+                </colgroup>
+                <thead>
+                  <tr className="bg-[#172033] text-white text-sm">
+                    <th className="text-left whitespace-nowrap">Tanggal</th><th className="text-left">Keterangan</th><th className="text-left">Kategori</th><th className="text-left">Akun</th>
+                    <th className="text-right whitespace-nowrap">Pemasukan</th><th className="text-right whitespace-nowrap">Pengeluaran</th><th className="text-right whitespace-nowrap">Transfer</th><th className="text-right whitespace-nowrap">Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsWithBalance.length === 0 ? <tr><td colSpan="8" className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</td></tr> : rowsWithBalance.map(t => {
+                    const {src, dest} = getAccountNames(t);
+                    const isTransfer = t.type === 'transfer';
+                    return <tr key={t.id} className="border-b border-[#E2E8F0]">
+                      <td className="text-[#475569] whitespace-nowrap">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
+                      <td className="font-bold text-[#172033] break-words">{t.note}</td>
+                      <td className="break-words"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
+                      <td className="font-bold break-words">{isTransfer ? <span className="text-[#4F46E5]">{src} → {dest}</span> : src}</td>
+                      <td className="text-right money-cell text-[#16A34A] font-black">{t.type === 'income' ? <Money value={t.amount}/> : '-'}</td>
+                      <td className="text-right money-cell text-[#DC2626] font-black">{t.type === 'expense' ? <Money value={t.amount}/> : '-'}</td>
+                      <td className="text-right money-cell text-[#4F46E5] font-black">{t.type === 'transfer' ? <Money value={t.amount}/> : '-'}</td>
+                      <td className="text-right money-cell text-[#172033] font-black">{isTransfer ? <span className="text-[#64748B]">Mutasi</span> : <Money value={t.runBal}/>}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="md:hidden space-y-3">
+              {rowsWithBalance.length === 0 ? <div className="p-8 text-center text-[#64748B] italic">Belum ada transaksi.</div> : rowsWithBalance.map(t => {
+                const {src, dest} = getAccountNames(t);
+                const isTransfer = t.type === 'transfer';
+                const isIncome = t.type === 'income';
+                return <div key={t.id} className="border border-[#E2E8F0] rounded-2xl p-4 bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
+                    <div><p className="text-[10px] uppercase font-bold text-[#64748B]">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</p><p className="font-black text-[#172033] mt-1">{t.note}</p></div>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F7F8FA] border border-[#E2E8F0] text-[#64748B]">{t.category}</span>
+                  </div>
+                  <div className="py-3">
+                    <p className="text-[10px] uppercase font-bold text-[#64748B] mb-1">Akun</p>
+                    <p className="font-bold text-sm break-words">{isTransfer ? `${src} → ${dest}` : src}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className={`rounded-xl p-3 border ${isTransfer ? 'bg-indigo-50 border-indigo-100' : isIncome ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                      <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">{isTransfer ? 'Transfer' : isIncome ? 'Pemasukan' : 'Pengeluaran'}</p>
+                      <Money value={t.amount} className={`${isTransfer ? 'text-[#4F46E5]' : isIncome ? 'text-[#16A34A]' : 'text-[#DC2626]'} font-black text-base`} />
+                    </div>
+                    <div className="rounded-xl p-3 border border-[#E2E8F0] bg-white">
+                      <p className="text-[10px] font-bold uppercase text-[#64748B] mb-1">Saldo</p>
+                      {isTransfer ? <span className="text-sm font-black text-[#64748B]">Mutasi</span> : <Money value={t.runBal} className="font-black text-base text-[#172033]" />}
+                    </div>
+                  </div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          <div className="report-print-only border-2 border-[#172033] rounded-xl overflow-hidden">
+            <table className="preview-table bg-white">
+              <colgroup>
+                <col style={{width:'10%'}}/><col style={{width:'15%'}}/><col style={{width:'12%'}}/><col style={{width:'20%'}}/>
+                <col style={{width:'12%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'9%'}}/>
+              </colgroup>
+              <thead>
+                <tr className="bg-[#172033] text-white">
+                  <th>Tanggal</th><th>Keterangan</th><th>Kategori</th><th>Akun</th><th>Pemasukan</th><th>Pengeluaran</th><th>Transfer</th><th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rowsWithBalance.map(t => {
+                  const {src,dest} = getAccountNames(t);
+                  const isTransfer = t.type === 'transfer';
+                  return <tr key={t.id}>
+                    <td>{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
+                    <td className="font-bold">{t.note}</td>
+                    <td>{t.category}</td>
+                    <td className="font-bold">{isTransfer ? `${src} → ${dest}` : src}</td>
+                    <td className="money-cell text-right">{t.type === 'income' ? <Money value={t.amount}/> : '-'}</td>
+                    <td className="money-cell text-right">{t.type === 'expense' ? <Money value={t.amount}/> : '-'}</td>
+                    <td className="money-cell text-right">{t.type === 'transfer' ? <Money value={t.amount}/> : '-'}</td>
+                    <td className="money-cell text-right">{isTransfer ? 'Mutasi' : <Money value={t.runBal}/>}</td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="preview-footer mt-10 text-center text-xs text-[#64748B] font-bold border-t-2 border-[#E2E8F0] pt-5">
+            <p>DompetKu v1.0 • © 2026 Hamisah • All Rights Reserved</p>
           </div>
         </div>
       </div>
