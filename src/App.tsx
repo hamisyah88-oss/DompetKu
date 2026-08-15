@@ -5,8 +5,9 @@ import {
   ArrowDownRight, BarChart3, Target, Settings, PieChart,
   ArrowRightLeft, Save, Upload, Home, Target as TargetIcon, User, Camera,
   Calendar, Check, AlertCircle, RefreshCw, SkipForward, ChevronRight,
-  KeyRound, LogOut, UserPlus, Phone, ShieldCheck
+  KeyRound, LogOut, UserPlus, Phone, ShieldCheck, Mail
 } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 const injectPWA = () => {
   if (document.getElementById('dompetku-manifest')) return;
@@ -106,6 +107,197 @@ const getScopedData = async (storeName, userId) => {
 
 const putScopedData = async (storeName, data, userId) => {
   return idb.put(storeName, { ...data, userId });
+};
+
+const cloudTableMap = {
+  accounts: 'accounts',
+  transactions: 'transactions',
+  budgets: 'budgets',
+  goals: 'goals',
+  recurring: 'recurring'
+};
+
+const toCloudRow = (storeName, data, userId) => {
+  if (storeName === 'accounts') return {
+    id: data.id,
+    user_id: userId,
+    name: data.name || '',
+    type: data.type || 'Bank',
+    initial_balance: Number(data.initialBalance) || 0
+  };
+  if (storeName === 'transactions') return {
+    id: data.id,
+    user_id: userId,
+    timestamp: Number(data.timestamp) || Date.now(),
+    type: data.type,
+    category: data.category || '',
+    note: data.note || '',
+    amount: Number(data.amount) || 0,
+    account_id: data.accountId || null,
+    to_account_id: data.toAccountId || null,
+    date_str: data.dateStr || ''
+  };
+  if (storeName === 'budgets') return {
+    id: data.id,
+    user_id: userId,
+    category: data.category || '',
+    limit_amount: Number(data.limit) || 0
+  };
+  if (storeName === 'goals') return {
+    id: data.id,
+    user_id: userId,
+    name: data.name || '',
+    target_amount: Number(data.targetAmount) || 0,
+    collected_amount: Number(data.collectedAmount) || 0,
+    deadline: data.deadline || null
+  };
+  if (storeName === 'recurring') return {
+    id: data.id,
+    user_id: userId,
+    type: data.type,
+    category: data.category || '',
+    note: data.note || '',
+    amount: Number(data.amount) || 0,
+    account_id: data.accountId || null,
+    frequency: data.frequency || 'monthly',
+    next_timestamp: data.nextTimestamp ?? null,
+    active: data.active !== false
+  };
+  return null;
+};
+
+const fromCloudRow = (storeName, row) => {
+  if (storeName === 'accounts') return {
+    id: row.id, userId: row.user_id, name: row.name, type: row.type,
+    initialBalance: Number(row.initial_balance) || 0
+  };
+  if (storeName === 'transactions') return {
+    id: row.id, userId: row.user_id, timestamp: Number(row.timestamp) || Date.now(),
+    type: row.type, category: row.category || '', note: row.note || '',
+    amount: Number(row.amount) || 0, accountId: row.account_id || '',
+    toAccountId: row.to_account_id || null, dateStr: row.date_str || ''
+  };
+  if (storeName === 'budgets') return {
+    id: row.id, userId: row.user_id, category: row.category,
+    limit: Number(row.limit_amount) || 0
+  };
+  if (storeName === 'goals') return {
+    id: row.id, userId: row.user_id, name: row.name,
+    targetAmount: Number(row.target_amount) || 0,
+    collectedAmount: Number(row.collected_amount) || 0,
+    deadline: row.deadline || ''
+  };
+  if (storeName === 'recurring') return {
+    id: row.id, userId: row.user_id, type: row.type, category: row.category || '',
+    note: row.note || '', amount: Number(row.amount) || 0,
+    accountId: row.account_id || '', frequency: row.frequency || 'monthly',
+    nextTimestamp: row.next_timestamp == null ? Date.now() : Number(row.next_timestamp),
+    active: row.active !== false
+  };
+  return row;
+};
+
+const saveStoreData = async (storeName, data, userId) => {
+  const localData = { ...data, userId };
+  await idb.put(storeName, localData);
+  const table = cloudTableMap[storeName];
+  if (!table || !userId) return localData;
+  const row = toCloudRow(storeName, localData, userId);
+  if (!row) return localData;
+  const { error } = await supabase.from(table).upsert(row);
+  if (error) {
+    console.error(`Supabase ${storeName} save failed:`, error);
+  }
+  return localData;
+};
+
+const deleteStoreData = async (storeName, id, userId) => {
+  await idb.delete(storeName, id);
+  const table = cloudTableMap[storeName];
+  if (!table || !userId) return;
+  const { error } = await supabase.from(table).delete().eq('id', id).eq('user_id', userId);
+  if (error) console.error(`Supabase ${storeName} delete failed:`, error);
+};
+
+const loadCloudUserData = async (authUser) => {
+  const userId = authUser.id;
+  const fallbackName = authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Pengguna';
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from('profiles')
+    .select('user_id,name,phone,profile_pic')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+
+  if (!profileRow) {
+    const { error } = await supabase.from('profiles').upsert({
+      user_id: userId,
+      name: fallbackName,
+      phone: '',
+      profile_pic: ''
+    });
+    if (error) throw error;
+  }
+
+  const results = await Promise.all([
+    supabase.from('accounts').select('*').eq('user_id', userId),
+    supabase.from('transactions').select('*').eq('user_id', userId).order('timestamp', { ascending: false }),
+    supabase.from('budgets').select('*').eq('user_id', userId),
+    supabase.from('goals').select('*').eq('user_id', userId),
+    supabase.from('recurring').select('*').eq('user_id', userId)
+  ]);
+  const firstError = results.find(result => result.error)?.error;
+  if (firstError) throw firstError;
+
+  const [accountsResult, txResult, budgetResult, goalResult, recurringResult] = results;
+  let accounts = (accountsResult.data || []).map(r => fromCloudRow('accounts', r));
+  const transactions = (txResult.data || []).map(r => fromCloudRow('transactions', r));
+  const budgets = (budgetResult.data || []).map(r => fromCloudRow('budgets', r));
+  const goals = (goalResult.data || []).map(r => fromCloudRow('goals', r));
+  const recurring = (recurringResult.data || []).map(r => fromCloudRow('recurring', r));
+
+  if (accounts.length === 0) {
+    const defaults = [
+      { id: `acc_${userId}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId },
+      { id: `acc_${userId}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId }
+    ];
+    for (const acc of defaults) await saveStoreData('accounts', acc, userId);
+    accounts = defaults;
+  }
+
+  const profile = profileRow || {
+    name: fallbackName, phone: '', profile_pic: ''
+  };
+  const appUser = {
+    id: userId,
+    email: authUser.email || '',
+    name: profile.name || fallbackName,
+    phone: profile.phone || '',
+    profilePic: profile.profile_pic || ''
+  };
+
+  await idb.put('user', appUser);
+  for (const item of accounts) await idb.put('accounts', item);
+  for (const item of transactions) await idb.put('transactions', item);
+  for (const item of budgets) await idb.put('budgets', item);
+  for (const item of goals) await idb.put('goals', item);
+  for (const item of recurring) await idb.put('recurring', item);
+
+  return { user: appUser, accounts, transactions, budgets, goals, recurring };
+};
+
+const saveProfileToCloud = async (appUser) => {
+  if (!appUser?.id) return;
+  const { error } = await supabase.from('profiles').upsert({
+    user_id: appUser.id,
+    name: appUser.name || '',
+    phone: appUser.phone || '',
+    profile_pic: appUser.profilePic || ''
+  });
+  if (error) throw error;
+  await idb.put('user', appUser);
 };
 
 const callDomiAI = async (prompt) => {
@@ -512,6 +704,7 @@ export default function App() {
   // PIN disimpan sebagai hash SHA-256, bukan teks biasa.
   const [authMode, setAuthMode] = useState('login');
   const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
   const [authPhone, setAuthPhone] = useState('');
   const [authPin, setAuthPin] = useState('');
   const [authConfirmPin, setAuthConfirmPin] = useState('');
@@ -545,86 +738,79 @@ export default function App() {
 
   useEffect(() => {
     injectPWA();
-    const loadData = async () => {
+
+    let mounted = true;
+
+    const hydrateSession = async (session) => {
+      if (!session?.user || !mounted) return;
       try {
-        const users = await idb.get('user') || [];
-        const sessionUserId = sessionStorage.getItem('dompetku_user_id');
-        let storedUser = users.find(u => u.id === sessionUserId) || null;
+        const data = await loadCloudUserData(session.user);
+        if (!mounted) return;
 
-        // Migrasi aman untuk versi lama yang hanya memiliki satu local_user.
-        if (!storedUser && users.length === 1 && users[0].id === 'local_user') {
-          storedUser = { ...users[0], id: 'user_' + Date.now().toString() };
-          await idb.delete('user', users[0].id);
-          await idb.put('user', storedUser);
-
-          for (const storeName of ['accounts', 'transactions', 'budgets', 'goals', 'recurring']) {
-            const oldItems = await idb.get(storeName) || [];
-            for (const item of oldItems) {
-              if (!item.userId) await idb.put(storeName, { ...item, userId: storedUser.id });
-            }
-          }
-        } else if (!storedUser && users.length > 0 && sessionUserId) {
-          storedUser = users.find(u => u.id === sessionUserId) || null;
-        }
-
-        if (storedUser) {
-          setUser(storedUser);
-          setAuthName(storedUser.name || '');
-          setAuthPhone(storedUser.phone || '');
-
-          if (!storedUser.pinHash) {
-            setAuthMode('register');
-            setAuthError('Akun lama ditemukan. Silakan buat PIN 6 digit untuk mengamankan akun Anda.');
-            setAppState('auth');
-          } else if (sessionStorage.getItem('dompetku_authenticated') === '1') {
-            setAppState('app');
-          } else {
-            setAuthMode('login');
-            setAppState('auth');
-          }
-        } else {
-          setAuthMode('register');
-          setAppState('auth');
-        }
-
-        const activeUserId = storedUser?.id || null;
-        const accs = activeUserId ? await getScopedData('accounts', activeUserId) : [];
-        const txs = activeUserId ? await getScopedData('transactions', activeUserId) : [];
-        const bdgts = activeUserId ? await getScopedData('budgets', activeUserId) : [];
-        const gls = activeUserId ? await getScopedData('goals', activeUserId) : [];
-        const recs = activeUserId ? await getScopedData('recurring', activeUserId) : [];
-
-        if (activeUserId && accs.length === 0) {
-          const defaultAccounts = [
-            { id: `acc_${activeUserId}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId: activeUserId },
-            { id: `acc_${activeUserId}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId: activeUserId }
-          ];
-          await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
-          setAccounts(defaultAccounts);
-        } else {
-          setAccounts(accs);
-        }
-
-        setBudgets(bdgts);
-        setGoals(gls);
-        setRecurring(recs);
-        setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
-      } catch (err) {
-        console.error('Failed to load DB', err);
-        setAuthError('Data aplikasi gagal dimuat. Silakan refresh halaman.');
+        setUser(data.user);
+        setAuthName(data.user.name || '');
+        setAuthEmail(data.user.email || '');
+        setAuthPhone(data.user.phone || '');
+        setAccounts(data.accounts);
+        setTransactions([...data.transactions].sort((a, b) => b.timestamp - a.timestamp));
+        setBudgets(data.budgets);
+        setGoals(data.goals);
+        setRecurring(data.recurring);
+        sessionStorage.setItem('dompetku_user_id', data.user.id);
+        sessionStorage.setItem('dompetku_authenticated', '1');
+        setAppState('app');
+      } catch (error) {
+        console.error('Gagal memuat data Supabase:', error);
+        setAuthError('Data akun gagal dimuat. Periksa koneksi internet lalu coba lagi.');
         setAppState('auth');
       }
     };
-    loadData();
+
+    const boot = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await hydrateSession(session);
+        } else {
+          setAuthMode('login');
+          setAppState('auth');
+        }
+      } catch (error) {
+        console.error('Auth boot failed:', error);
+        setAuthMode('login');
+        setAppState('auth');
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setAccounts([]);
+        setTransactions([]);
+        setBudgets([]);
+        setGoals([]);
+        setRecurring([]);
+        setAppState('auth');
+        setAuthMode('login');
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('reset');
+        setAuthError('');
+        setAppState('auth');
+      }
+      if (event === 'SIGNED_IN' && session && appState === 'loading') {
+        void hydrateSession(session);
+      }
+    });
+
+    void boot();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
-
-  const normalizePhone = (value = '') => value.replace(/\D/g, '');
-
-  const hashPin = async (pin) => {
-    const data = new TextEncoder().encode(pin);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-  };
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -632,102 +818,107 @@ export default function App() {
     setAuthBusy(true);
 
     try {
-      const phone = normalizePhone(authPhone);
-      if (!phone || phone.length < 10 || phone.length > 15) throw new Error('Nomor WhatsApp harus 10–15 digit.');
-      if (!/^\d{6}$/.test(authPin)) throw new Error('PIN harus tepat 6 digit angka.');
+      const email = authEmail.trim().toLowerCase();
 
-      const users = await idb.get('user') || [];
-      const userByPhone = users.find(u => normalizePhone(u.phone) === phone);
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Email tidak valid. Periksa kembali alamat email Anda.');
+      }
+      if (authMode !== 'forgot' && !/^\d{6}$/.test(authPin)) {
+        throw new Error('PIN harus tepat 6 digit angka.');
+      }
 
       if (authMode === 'register') {
         if (!authName.trim()) throw new Error('Nama pengguna wajib diisi.');
         if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
-        if (userByPhone) throw new Error('Nomor WhatsApp sudah terdaftar. Silakan masuk.');
 
-        const pinHash = await hashPin(authPin);
-        const newUser = {
-          id: 'user_' + Date.now().toString() + '_' + Math.random().toString(36).slice(2, 8),
-          name: authName.trim(),
-          phone,
-          pinHash,
-          profilePic: ''
-        };
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: authPin,
+          options: {
+            data: { name: authName.trim() }
+          }
+        });
 
-        await idb.put('user', newUser);
+        if (error) {
+          if (error.message.toLowerCase().includes('already registered')) {
+            throw new Error('Email sudah terdaftar. Silakan masuk.');
+          }
+          throw error;
+        }
 
-        const defaultAccounts = [
-          { id: `acc_${newUser.id}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId: newUser.id },
-          { id: `acc_${newUser.id}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId: newUser.id }
-        ];
-        await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
+        if (!data.user) throw new Error('Akun gagal dibuat. Silakan coba lagi.');
 
-        setUser(newUser);
-        setAccounts(defaultAccounts);
+        const hydrated = await loadCloudUserData(data.user);
+        setUser(hydrated.user);
+        setAuthName(hydrated.user.name);
+        setAuthEmail(hydrated.user.email);
+        setAccounts(hydrated.accounts);
         setTransactions([]);
         setBudgets([]);
         setGoals([]);
         setRecurring([]);
-        sessionStorage.setItem('dompetku_user_id', newUser.id);
-        sessionStorage.setItem('dompetku_authenticated', '1');
         setAuthPin('');
         setAuthConfirmPin('');
-        setAuthError('');
         setAppState('app');
         return;
       }
 
       if (authMode === 'forgot') {
-        if (!userByPhone) throw new Error('Nomor WhatsApp belum terdaftar. Silakan daftar terlebih dahulu.');
-        if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin
+        });
+        if (error) throw error;
 
-        const pinHash = await hashPin(authPin);
-        const updatedUser = { ...userByPhone, pinHash };
-        await idb.put('user', updatedUser);
-        setUser(updatedUser);
-        setAuthMode('login');
-        setAuthPhone(phone);
+        setAuthError('Link untuk membuat PIN baru sudah dikirim ke email Anda. Buka email tersebut, lalu kembali ke DompetKu.');
         setAuthPin('');
         setAuthConfirmPin('');
-        setAuthError('PIN berhasil diubah. Silakan masuk dengan PIN baru.');
         return;
       }
 
-      if (!userByPhone?.pinHash) {
-        throw new Error('Nomor WhatsApp belum terdaftar. Silakan daftar terlebih dahulu.');
+      if (authMode === 'reset') {
+        if (authPin !== authConfirmPin) throw new Error('Konfirmasi PIN tidak sama.');
+
+        const { error } = await supabase.auth.updateUser({ password: authPin });
+        if (error) throw error;
+
+        await supabase.auth.signOut();
+        setAuthMode('login');
+        setAuthError('PIN berhasil diubah. Silakan masuk dengan PIN baru.');
+        setAuthPin('');
+        setAuthConfirmPin('');
+        return;
       }
 
-      const pinHash = await hashPin(authPin);
-      if (pinHash !== userByPhone.pinHash) throw new Error('PIN salah. Silakan coba lagi atau gunakan Lupa PIN.');
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: authPin
+      });
 
-      const userId = userByPhone.id;
-      const accs = await getScopedData('accounts', userId);
-      const txs = await getScopedData('transactions', userId);
-      const bdgts = await getScopedData('budgets', userId);
-      const gls = await getScopedData('goals', userId);
-      const recs = await getScopedData('recurring', userId);
-
-      if (accs.length === 0) {
-        const defaultAccounts = [
-          { id: `acc_${userId}_1`, name: 'Dompet Tunai', type: 'Dompet', initialBalance: 0, userId },
-          { id: `acc_${userId}_2`, name: 'Rekening Bank', type: 'Bank', initialBalance: 0, userId }
-        ];
-        await Promise.all(defaultAccounts.map(a => idb.put('accounts', a)));
-        setAccounts(defaultAccounts);
-      } else {
-        setAccounts(accs);
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('invalid login credentials') || msg.includes('invalid')) {
+          throw new Error('Email atau PIN salah. Bila belum punya akun, pilih Daftar sekarang.');
+        }
+        throw error;
       }
 
-      setUser(userByPhone);
-      setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
-      setBudgets(bdgts);
-      setGoals(gls);
-      setRecurring(recs);
-      sessionStorage.setItem('dompetku_user_id', userId);
-      sessionStorage.setItem('dompetku_authenticated', '1');
+      if (!data.user) throw new Error('Sesi login tidak ditemukan. Silakan coba lagi.');
+
+      const hydrated = await loadCloudUserData(data.user);
+      setUser(hydrated.user);
+      setAuthName(hydrated.user.name);
+      setAuthEmail(hydrated.user.email);
+      setAuthPhone(hydrated.user.phone);
+      setAccounts(hydrated.accounts);
+      setTransactions([...hydrated.transactions].sort((a, b) => b.timestamp - a.timestamp));
+      setBudgets(hydrated.budgets);
+      setGoals(hydrated.goals);
+      setRecurring(hydrated.recurring);
       setAuthPin('');
       setAuthError('');
       setAppState('app');
     } catch (error) {
+      console.error('Auth error:', error);
       setAuthError(error.message || 'Terjadi kesalahan. Silakan coba lagi.');
     } finally {
       setAuthBusy(false);
@@ -739,16 +930,24 @@ export default function App() {
     setAuthError('');
     setAuthPin('');
     setAuthConfirmPin('');
-    if (mode === 'register' && user) {
-      setAuthName(user.name || '');
-      setAuthPhone(user.phone || '');
+    if (mode === 'register') {
+      setAuthName(user?.name || '');
+      setAuthEmail(user?.email || authEmail || '');
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     sessionStorage.removeItem('dompetku_authenticated');
     sessionStorage.removeItem('dompetku_user_id');
+    setUser(null);
+    setAccounts([]);
+    setTransactions([]);
+    setBudgets([]);
+    setGoals([]);
+    setRecurring([]);
     setAuthMode('login');
+    setAuthEmail('');
     setAuthPin('');
     setAuthConfirmPin('');
     setAuthError('');
@@ -856,7 +1055,7 @@ export default function App() {
         dateStr: new Date().toLocaleDateString('id-ID'),
         userId: user.id
       };
-      await idb.put('transactions', newTx);
+      await saveStoreData('transactions', newTx, user.id);
       setTransactions([newTx, ...transactions]);
     }
 
@@ -865,11 +1064,11 @@ export default function App() {
       if (rec.frequency === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
       if (rec.frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
       const updatedRec = { ...rec, nextTimestamp: nextDate.getTime() };
-      await idb.put('recurring', updatedRec);
+      await saveStoreData('recurring', updatedRec, user.id);
       updatedRecs = updatedRecs.map(r => r.id === recId ? updatedRec : r);
     } else if (action === 'disable') {
       const updatedRec = { ...rec, active: false };
-      await idb.put('recurring', updatedRec);
+      await saveStoreData('recurring', updatedRec, user.id);
       updatedRecs = updatedRecs.map(r => r.id === recId ? updatedRec : r);
     }
     setRecurring(updatedRecs);
@@ -897,7 +1096,7 @@ export default function App() {
 
     const updatedTxs = [newTx, ...transactions];
     setTransactions(updatedTxs);
-    await idb.put('transactions', newTx);
+    await saveStoreData('transactions', newTx, user.id);
     setTxType(null); 
 
     setIsAiLoading(true);
@@ -911,7 +1110,7 @@ export default function App() {
 
   const handleDeleteTransaction = async (id) => {
      if(window.confirm('Hapus histori mutasi ini? Saldo akan disesuaikan kembali otomatis.')) {
-       await idb.delete('transactions', id);
+       await deleteStoreData('transactions', id, user.id);
        setTransactions(transactions.filter(t => t.id !== id));
      }
   };
@@ -1074,7 +1273,7 @@ export default function App() {
     const periodLabel = reportPeriod === 'Custom' ? `periode ${customDates.start || '?'} sampai ${customDates.end || '?'}` : reportPeriod;
     if (!window.confirm(`Bersihkan ${filteredTransactions.length} transaksi pada ${periodLabel}? Data yang dihapus tidak dapat dikembalikan kecuali Anda memiliki backup JSON.`)) return;
     if (window.prompt('Untuk menghapus transaksi yang dipilih, ketik HAPUS') !== 'HAPUS') { alert('Penghapusan dibatalkan.'); return; }
-    await Promise.all(filteredTransactions.map(t => idb.delete('transactions', t.id)));
+    await Promise.all(filteredTransactions.map(t => deleteStoreData('transactions', t.id, user.id)));
     const removed = new Set(filteredTransactions.map(t => t.id));
     setTransactions(prev => prev.filter(t => !removed.has(t.id)));
     setShowPreview(false);
@@ -1085,7 +1284,7 @@ export default function App() {
     if (transactions.length === 0) { alert('Belum ada transaksi untuk dihapus.'); return; }
     if (!window.confirm(`PERINGATAN: ${transactions.length} transaksi akan dihapus permanen. Anggaran, akun, target, dan profil TIDAK akan dihapus. Lanjutkan?`)) return;
     if (window.prompt('Ketik HAPUS SEMUA untuk menghapus seluruh histori transaksi') !== 'HAPUS SEMUA') { alert('Penghapusan dibatalkan.'); return; }
-    await Promise.all(transactions.map(t => idb.delete('transactions', t.id)));
+    await Promise.all(transactions.map(t => deleteStoreData('transactions', t.id, user.id)));
     setTransactions([]);
     setShowPreview(false);
     alert('Seluruh transaksi berhasil dihapus.');
@@ -1210,7 +1409,7 @@ export default function App() {
 
   const handleSaveBudget = async (data) => {
     const budget = { id: data.id || `b_${user.id}_${Date.now()}`, category: data.category, limit: Number(data.limit) || 0, userId: user.id };
-    await idb.put('budgets', budget);
+    await saveStoreData('budgets', budget, user.id);
     setBudgets(prev => data.id ? prev.map(b => b.id === data.id ? budget : b) : [...prev, budget]);
     setShowAddBudget(false);
     setEditingBudget(null);
@@ -1220,7 +1419,7 @@ export default function App() {
     const budget = budgets.find(b => b.id === id);
     if (!budget) return;
     if (!window.confirm(`Hapus anggaran ${budget.category}? Transaksi keuangan tidak akan ikut terhapus.`)) return;
-    await idb.delete('budgets', id);
+    await deleteStoreData('budgets', id, user.id);
     setBudgets(prev => prev.filter(b => b.id !== id));
   };
 
@@ -1309,7 +1508,7 @@ export default function App() {
                         <h3 className="font-bold text-[#172033] text-lg">{g.name}</h3>
                         <p className="text-[10px] text-[#64748B] font-bold uppercase mt-1 flex items-center gap-1"><Calendar size={12}/> Target: {g.deadline}</p>
                       </div>
-                      <button onClick={async () => { if(window.confirm('Hapus target ini?')){ await idb.delete('goals', g.id); setGoals(goals.filter(x=>x.id!==g.id));} }} className="text-[#64748B] hover:text-[#DC2626]"><Trash2 size={16}/></button>
+                      <button onClick={async () => { if(window.confirm('Hapus target ini?')){ await deleteStoreData('goals', g.id, user.id); setGoals(goals.filter(x=>x.id!==g.id));} }} className="text-[#64748B] hover:text-[#DC2626]"><Trash2 size={16}/></button>
                     </div>
                     <div className="w-full bg-[#F7F8FA] border border-[#E2E8F0] rounded-full h-3 mb-2 mt-4 overflow-hidden">
                       <div className="bg-[#16A34A] h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(pct, 100)}%` }}></div>
@@ -1318,7 +1517,7 @@ export default function App() {
                        <span>Terkumpul: <span className="text-[#172033]">Rp {g.collectedAmount.toLocaleString('id-ID')}</span></span>
                        <span>Dari: <span className="text-[#172033]">Rp {g.targetAmount.toLocaleString('id-ID')}</span></span>
                     </div>
-                    <button onClick={async () => {const amt = prompt('Tambah dana (Rp):'); if(amt && !isNaN(amt)){ const updatedGoal = { ...g, collectedAmount: g.collectedAmount + parseInt(amt) }; await idb.put('goals', updatedGoal); setGoals(goals.map(x=>x.id===g.id?updatedGoal:x)); }}} className="w-full py-3 bg-[#172033] text-white text-xs font-bold rounded-xl hover:bg-[#0F172A] transition shadow-md">
+                    <button onClick={async () => {const amt = prompt('Tambah dana (Rp):'); if(amt && !isNaN(amt)){ const updatedGoal = { ...g, collectedAmount: g.collectedAmount + parseInt(amt) }; await saveStoreData('goals', updatedGoal, user.id); setGoals(goals.map(x=>x.id===g.id?updatedGoal:x)); }}} className="w-full py-3 bg-[#172033] text-white text-xs font-bold rounded-xl hover:bg-[#0F172A] transition shadow-md">
                       Update Progress / Tambah Dana
                     </button>
                  </div>
@@ -1350,9 +1549,9 @@ export default function App() {
                      {r.active ? (
                        <button onClick={() => processRecurring(r.id, 'disable')} className="px-3 py-1.5 bg-white border border-[#CBD5E1] text-[#64748B] text-xs font-bold rounded-lg hover:bg-[#F7F8FA]">Nonaktifkan</button>
                      ) : (
-                       <button onClick={async () => { const up = {...r, active:true}; await idb.put('recurring', up); setRecurring(recurring.map(x=>x.id===r.id?up:x)); }} className="px-3 py-1.5 bg-[#16A34A] text-white text-xs font-bold rounded-lg hover:bg-green-700">Aktifkan</button>
+                       <button onClick={async () => { const up = {...r, active:true}; await saveStoreData('recurring', up, user.id); setRecurring(recurring.map(x=>x.id===r.id?up:x)); }} className="px-3 py-1.5 bg-[#16A34A] text-white text-xs font-bold rounded-lg hover:bg-green-700">Aktifkan</button>
                      )}
-                     <button onClick={async () => { if(window.confirm('Hapus jadwal ini?')){ await idb.delete('recurring', r.id); setRecurring(recurring.filter(x=>x.id!==r.id));} }} className="p-2 text-[#64748B] hover:text-[#DC2626] bg-[#F7F8FA] rounded-lg"><Trash2 size={16}/></button>
+                     <button onClick={async () => { if(window.confirm('Hapus jadwal ini?')){ await deleteStoreData('recurring', r.id, user.id); setRecurring(recurring.filter(x=>x.id!==r.id));} }} className="p-2 text-[#64748B] hover:text-[#DC2626] bg-[#F7F8FA] rounded-lg"><Trash2 size={16}/></button>
                   </div>
                </div>
              ))
@@ -1364,11 +1563,16 @@ export default function App() {
 
   const renderSettings = () => {
     const handleBackup = async () => {
+      const currentUserId = user?.id;
       const data = {
         appName: 'DompetKu', version: '1.0', exportedAt: new Date().toISOString(),
-        user: await idb.get('user'), accounts: await idb.get('accounts'),
-        transactions: await idb.get('transactions'), budgets: await idb.get('budgets'),
-        goals: await idb.get('goals'), recurring: await idb.get('recurring'), settings: await idb.get('settings')
+        user: currentUserId ? [user] : [],
+        accounts: currentUserId ? await getScopedData('accounts', currentUserId) : [],
+        transactions: currentUserId ? await getScopedData('transactions', currentUserId) : [],
+        budgets: currentUserId ? await getScopedData('budgets', currentUserId) : [],
+        goals: currentUserId ? await getScopedData('goals', currentUserId) : [],
+        recurring: currentUserId ? await getScopedData('recurring', currentUserId) : [],
+        settings: []
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
       const a = document.createElement('a');
@@ -1380,17 +1584,55 @@ export default function App() {
     const handleRestore = (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      if (window.confirm('PERINGATAN: Data saat ini akan ditimpa. Lanjutkan?')) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            await idb.restoreFromJson(event.target.result);
-            alert("Restore Berhasil! Memuat ulang...");
-            window.location.reload();
-          } catch(err) { alert("GAGAL: File rusak atau tidak valid."); }
+      if (!window.confirm('PERINGATAN: Data saat ini akan ditimpa. Lanjutkan?')) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          if (!data.appName || data.appName !== 'DompetKu') throw new Error('File backup DompetKu tidak valid.');
+          if (!user?.id) throw new Error('Sesi akun tidak ditemukan.');
+
+          const userId = user.id;
+          const currentTables = ['accounts', 'transactions', 'budgets', 'goals', 'recurring'];
+
+          for (const storeName of currentTables) {
+            const table = cloudTableMap[storeName];
+            const { error } = await supabase.from(table).delete().eq('user_id', userId);
+            if (error) throw error;
+
+            const existing = await getScopedData(storeName, userId);
+            for (const item of existing) await idb.delete(storeName, item.id);
+          }
+
+          const backupUser = Array.isArray(data.user) ? data.user[0] : data.user;
+          const updatedUser = {
+            ...user,
+            name: backupUser?.name || user.name,
+            phone: backupUser?.phone || user.phone || '',
+            profilePic: backupUser?.profilePic || ''
+          };
+          await saveProfileToCloud(updatedUser);
+
+          for (const storeName of currentTables) {
+            const items = Array.isArray(data[storeName]) ? data[storeName] : [];
+            for (const item of items) {
+              const normalized = { ...item, userId };
+              await saveStoreData(storeName, normalized, userId);
+            }
+          }
+
+          setUser(updatedUser);
+          alert("Restore berhasil. Memuat ulang data akun...");
+          window.location.reload();
+        } catch (err) {
+          console.error('Restore failed:', err);
+          alert(`GAGAL RESTORE: ${err.message || 'File rusak atau tidak valid.'}`);
+        } finally {
+          e.target.value = '';
         }
-        reader.readAsText(file);
-      }
+      };
+      reader.readAsText(file);
     };
 
     const handleProfilePicChange = (e) => {
@@ -1402,7 +1644,7 @@ export default function App() {
       reader.onload = async (event) => {
         try {
           const updatedUser = { ...user, profilePic: event.target.result };
-          await idb.put('user', updatedUser);
+          await saveProfileToCloud(updatedUser);
           setUser(updatedUser);
           e.target.value = '';
           alert('Foto profil berhasil diperbarui.');
@@ -1416,7 +1658,7 @@ export default function App() {
       if (!window.confirm('Hapus foto profil ini?')) return;
       try {
         const updatedUser = { ...user, profilePic: '' };
-        await idb.put('user', updatedUser);
+        await saveProfileToCloud(updatedUser);
         setUser(updatedUser);
         alert('Foto profil berhasil dihapus.');
       } catch (error) { console.error(error); alert('Gagal menghapus foto profil.'); }
@@ -1427,7 +1669,7 @@ export default function App() {
       if (!cleanName) { alert('Nama tidak boleh kosong.'); return; }
       try {
         const updatedUser = { ...user, name: cleanName, phone: user?.phone?.trim() || '' };
-        await idb.put('user', updatedUser);
+        await saveProfileToCloud(updatedUser);
         setUser(updatedUser);
         alert('Profil berhasil disimpan.');
       } catch (error) { console.error(error); alert('Gagal menyimpan profil.'); }
@@ -1457,7 +1699,14 @@ export default function App() {
                   <input type="text" value={user?.name || ''} onChange={(e) => setUser({ ...user, name: e.target.value })} placeholder="Masukkan nama Anda" className="w-full p-3.5 bg-white border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" />
                 </div>
                 <div>
-                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nomor WhatsApp</label>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Email Akun</label>
+                  <div className="relative">
+                    <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                    <input type="email" value={user?.email || ''} readOnly className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033]" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nomor WhatsApp (opsional)</label>
                   <input type="text" value={user?.phone || ''} onChange={(e) => setUser({ ...user, phone: e.target.value })} placeholder="08xxxxxxxxxx" className="w-full p-3.5 bg-white border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" />
                 </div>
                 <button type="button" onClick={handleSaveProfile} className="w-full py-3.5 bg-[#172033] text-[#D4A72C] rounded-xl font-black flex items-center justify-center gap-2 shadow-md hover:bg-[#0F172A] transition active:scale-[0.99]">
@@ -1497,6 +1746,7 @@ export default function App() {
   if (appState === 'auth') {
     const isRegister = authMode === 'register';
     const isForgot = authMode === 'forgot';
+    const isReset = authMode === 'reset';
 
     return (
       <div className="min-h-screen bg-[#172033] flex items-center justify-center p-4 font-sans">
@@ -1513,13 +1763,15 @@ export default function App() {
             <div className="p-7">
               <div className="text-center mb-6">
                 <h2 className="text-2xl font-black text-[#172033]">
-                  {isRegister ? 'Buat Akun' : isForgot ? 'Lupa PIN' : 'Selamat Datang'}
+                  {isRegister ? 'Buat Akun' : isForgot ? 'Lupa PIN' : isReset ? 'Buat PIN Baru' : 'Selamat Datang'}
                 </h2>
                 <p className="text-sm text-[#64748B] font-medium mt-1">
                   {isRegister
                     ? 'Daftarkan DompetKu di perangkat ini.'
                     : isForgot
-                    ? 'Masukkan nomor WhatsApp untuk membuat PIN baru.'
+                    ? 'Masukkan email untuk menerima link membuat PIN baru.'
+                    : authMode === 'reset'
+                    ? 'Buat PIN baru untuk akun DompetKu Anda.'
                     : 'Masuk untuk melihat dan mengelola keuangan Anda.'}
                 </p>
               </div>
@@ -1543,46 +1795,51 @@ export default function App() {
                 )}
 
                 <div>
-                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Nomor WhatsApp</label>
+                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">Email</label>
                   <div className="relative">
-                    <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                    <input type="tel" inputMode="numeric" value={authPhone} onChange={e => setAuthPhone(e.target.value.replace(/[^\d]/g, ''))} placeholder="08xxxxxxxxxx" autoComplete="tel"
+                    <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                    <input type="email" inputMode="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)}
+                      placeholder="nama@email.com" autoComplete="email"
                       className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-bold text-[#172033] focus:border-[#D4A72C]" required />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-black text-[#475569] uppercase mb-2">{isForgot ? 'PIN Baru (6 digit)' : 'PIN (6 digit)'}</label>
-                  <div className="relative">
-                    <KeyRound size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                    <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authPin}
-                      onChange={e => setAuthPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="••••••" autoComplete={isForgot || isRegister ? 'new-password' : 'current-password'}
-                      className="w-full p-3.5 pl-10 pr-16 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
-                    <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#64748B]">{showPin ? 'Sembunyikan' : 'Lihat'}</button>
-                  </div>
-                </div>
-
-                {(isRegister || isForgot) && (
-                  <div>
-                    <label className="block text-xs font-black text-[#475569] uppercase mb-2">Konfirmasi PIN</label>
-                    <div className="relative">
-                      <ShieldCheck size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                      <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authConfirmPin}
-                        onChange={e => setAuthConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" autoComplete="new-password"
-                        className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
+                {!isForgot && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-black text-[#475569] uppercase mb-2">{authMode === 'reset' ? 'PIN Baru (6 digit)' : 'PIN (6 digit)'}</label>
+                      <div className="relative">
+                        <KeyRound size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                        <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authPin}
+                          onChange={e => setAuthPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="••••••" autoComplete={isRegister || authMode === 'reset' ? 'new-password' : 'current-password'}
+                          className="w-full p-3.5 pl-10 pr-16 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
+                        <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#64748B]">{showPin ? 'Sembunyikan' : 'Lihat'}</button>
+                      </div>
                     </div>
-                  </div>
-                )}
 
+                    {(isRegister || authMode === 'reset') && (
+                      <div>
+                        <label className="block text-xs font-black text-[#475569] uppercase mb-2">Konfirmasi PIN</label>
+                        <div className="relative">
+                          <ShieldCheck size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                          <input type={showPin ? 'text' : 'password'} inputMode="numeric" maxLength={6} value={authConfirmPin}
+                            onChange={e => setAuthConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder="••••••" autoComplete="new-password"
+                            className="w-full p-3.5 pl-10 bg-[#F7F8FA] border-2 border-[#E2E8F0] rounded-xl outline-none font-black tracking-[0.4em] text-[#172033] focus:border-[#D4A72C]" required />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
                 <button type="submit" disabled={authBusy}
                   className="w-full py-4 bg-[#172033] text-[#D4A72C] rounded-xl font-black text-lg shadow-lg hover:bg-[#0F172A] disabled:opacity-60 flex items-center justify-center gap-2 transition active:scale-[0.99]">
-                  {authBusy ? <Loader2 size={22} className="animate-spin" /> : isRegister ? <><UserPlus size={20}/> Daftar & Masuk</> : isForgot ? <><KeyRound size={20}/> Simpan PIN Baru</> : 'Masuk'}
+                  {authBusy ? <Loader2 size={22} className="animate-spin" /> : isRegister ? <><UserPlus size={20}/> Daftar & Masuk</> : isForgot ? <><Mail size={20}/> Kirim Link Reset PIN</> : authMode === 'reset' ? <><KeyRound size={20}/> Simpan PIN Baru</> : 'Masuk'}
                 </button>
               </form>
 
               <div className="mt-6 text-center space-y-3">
-                {!isRegister && !isForgot && (
+                {!isRegister && !isForgot && authMode !== 'reset' && (
                   <>
                     <button type="button" onClick={() => switchAuthMode('forgot')} className="text-sm font-bold text-[#B8860B] hover:underline">Lupa PIN?</button>
                     <div className="text-sm text-[#64748B]">
@@ -1592,18 +1849,18 @@ export default function App() {
                   </>
                 )}
 
-                {isForgot && (
+                {(isForgot || authMode === 'reset') && (
                   <button type="button" onClick={() => switchAuthMode('login')} className="text-sm font-bold text-[#172033] hover:underline">← Kembali ke Login</button>
                 )}
 
-                {isRegister && user?.pinHash && (
+                {isRegister && (
                   <button type="button" onClick={() => switchAuthMode('login')} className="text-sm font-bold text-[#172033] hover:underline">← Kembali ke Login</button>
                 )}
               </div>
             </div>
 
             <div className="bg-[#F7F8FA] border-t border-[#E2E8F0] p-4 text-center">
-              <p className="text-[10px] font-bold text-[#94A3B8]">DompetKu v1.0 • Data tersimpan aman di perangkat ini</p>
+              <p className="text-[10px] font-bold text-[#94A3B8]">DompetKu v1.0 • Data tersinkronisasi ke akun cloud Anda</p>
             </div>
           </div>
         </div>
@@ -1767,14 +2024,14 @@ export default function App() {
       </nav>
       
       {txType && <TransactionModal txType={txType} accounts={accounts} accountBalances={accountBalances} onClose={() => setTxType(null)} onSubmit={handleTransactionSubmit} isAiLoading={isAiLoading} />}
-      {showAddAccount && <AddAccountModal onClose={() => setShowAddAccount(false)} onSave={(data) => { const newAcc = { id: `acc_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('accounts', newAcc); setAccounts([...accounts, newAcc]); setShowAddAccount(false); }} />}
+      {showAddAccount && <AddAccountModal onClose={() => setShowAddAccount(false)} onSave={(data) => { const newAcc = { id: `acc_${user.id}_${Date.now()}`, ...data, userId: user.id }; saveStoreData('accounts', newAcc, user.id); setAccounts([...accounts, newAcc]); setShowAddAccount(false); }} />}
       {showAddBudget && <AddBudgetModal
         initialBudget={editingBudget}
         onClose={() => { setShowAddBudget(false); setEditingBudget(null); }}
         onSave={handleSaveBudget}
       />}
-      {showAddGoal && <AddGoalModal onClose={() => setShowAddGoal(false)} onSave={(data) => { const newG = { id: `g_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('goals', newG); setGoals([...goals, newG]); setShowAddGoal(false); }} />}
-      {showAddRecurring && <AddRecurringModal accounts={accounts} onClose={() => setShowAddRecurring(false)} onSave={(data) => { const newR = { id: `r_${user.id}_${Date.now()}`, ...data, userId: user.id }; idb.put('recurring', newR); setRecurring([...recurring, newR]); setShowAddRecurring(false); }} />}
+      {showAddGoal && <AddGoalModal onClose={() => setShowAddGoal(false)} onSave={(data) => { const newG = { id: `g_${user.id}_${Date.now()}`, ...data, userId: user.id }; saveStoreData('goals', newG, user.id); setGoals([...goals, newG]); setShowAddGoal(false); }} />}
+      {showAddRecurring && <AddRecurringModal accounts={accounts} onClose={() => setShowAddRecurring(false)} onSave={(data) => { const newR = { id: `r_${user.id}_${Date.now()}`, ...data, userId: user.id }; saveStoreData('recurring', newR, user.id); setRecurring([...recurring, newR]); setShowAddRecurring(false); }} />}
     </div>
   );
 }
