@@ -13,7 +13,7 @@ import { supabase } from './lib/supabase';
 const injectPWA = () => {
   if (document.getElementById('dompetku-manifest')) return;
   const manifest = {
-    name: "DompetKu: Catat. Kendalikan. Rencanakan.",
+    name: "DompetKu",
     short_name: "DompetKu",
     start_url: ".",
     display: "standalone",
@@ -21,12 +21,12 @@ const injectPWA = () => {
     theme_color: "#172033",
    icons: [
   {
-    src: "/icons/icon-192.png?v=2",
+    src: "/icons/icon-baru.png?v=3",
     sizes: "192x192",
     type: "image/png"
   },
   {
-    src: "/icons/icon-192.png?v=2",
+    src: "/icons/icon-baru.png?v=3",
     sizes: "512x512",
     type: "image/png"
   }
