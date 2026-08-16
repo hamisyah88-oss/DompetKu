@@ -411,7 +411,7 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                   <td className="p-2 text-center align-top">
                     <button
                       type="button"
-                      aria-label={`Hapus transaksi ${t.note || }`}
+                      aria-label={`Hapus transaksi ${t.note || ''}`}
                       title="Hapus transaksi"
                       onClick={() => onDelete(t.id)}
                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[#E2E8F0] bg-white text-[#64748B] hover:text-[#DC2626] hover:border-red-200 hover:bg-red-50 transition-colors"
