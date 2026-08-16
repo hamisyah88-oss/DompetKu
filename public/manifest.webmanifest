@@ -1,7 +1,7 @@
 {
-  "name": "DompetKu: Catat. Kendalikan. Rencanakan.",
-  "short_name": "DompetKu",
-  "description": "Aplikasi pencatatan keuangan pribadi DompetKu.",
+  "name": "DompetKu",
+"short_name": "DompetKu",
+"description": "Aplikasi pencatatan keuangan pribadi DompetKu.",
   "lang": "id-ID",
   "dir": "ltr",
   "start_url": "/",
