@@ -10,36 +10,6 @@ import {
 import { supabase } from './lib/supabase';
 
 
-const injectPWA = () => {
-  if (document.getElementById('dompetku-manifest')) return;
-  const manifest = {
-    name: "DompetKu",
-    short_name: "DompetKu",
-    start_url: ".",
-    display: "standalone",
-    background_color: "#172033",
-    theme_color: "#172033",
-  icons: [
-  {
-    src: "/icons/icon-192.png?v=4",
-    sizes: "192x192",
-    type: "image/png"
-  },
-  {
-    src: "/icons/icon-512.png?v=4",
-    sizes: "512x512",
-    type: "image/png"
-  }
-],
-  };
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-  const link = document.createElement('link');
-  link.id = 'dompetku-manifest';
-  link.rel = 'manifest';
-  link.href = URL.createObjectURL(blob);
-  document.head.appendChild(link);
-};
-
 const DB_NAME = 'DompetKuDB';
 const DB_VERSION = 3;
 
@@ -372,24 +342,24 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
   return (
     <>
       <div className="hidden md:block w-full overflow-x-auto print:hidden">
-        <table className="w-full min-w-0 text-left border-collapse bg-white table-fixed">
+        <table className="w-full min-w-[1080px] text-left border-collapse bg-white table-fixed">
           <colgroup>
             <col style={{width:'10%'}} />
-            <col style={{width:'14%'}} />
-            <col style={{width:'12%'}} />
-            <col style={{width:'19%'}} />
-            <col style={{width:'12%'}} />
-            <col style={{width:'12%'}} />
-            <col style={{width:'9%'}} />
+            <col style={{width:'18%'}} />
+            <col style={{width:'13%'}} />
+            <col style={{width:'16%'}} />
+            <col style={{width:'11%'}} />
+            <col style={{width:'11%'}} />
             <col style={{width:'8%'}} />
-            <col style={{width:'4%'}} />
+            <col style={{width:'8%'}} />
+            <col style={{width:'5%'}} />
           </colgroup>
           <thead>
             <tr className="bg-[#172033] text-white text-sm border-b-2 border-[#0F172A]">
               <th className="p-3 font-bold whitespace-nowrap">Tanggal</th>
-              <th className="p-3 font-bold">Keterangan</th>
-              <th className="p-3 font-bold">Kategori</th>
-              <th className="p-3 font-bold">Akun</th>
+              <th className="p-3 font-bold whitespace-nowrap">Keterangan</th>
+              <th className="p-3 font-bold whitespace-nowrap">Kategori</th>
+              <th className="p-3 font-bold whitespace-nowrap">Akun</th>
               <th className="p-3 font-bold text-right whitespace-nowrap">Pemasukan</th>
               <th className="p-3 font-bold text-right whitespace-nowrap">Pengeluaran</th>
               <th className="p-3 font-bold text-right whitespace-nowrap">Transfer</th>
@@ -408,8 +378,8 @@ const LedgerTableComponent = ({ data, accounts, showPreview, onDelete }) => {
                 <tr key={t.id} className="border-b border-[#E2E8F0] hover:bg-[#F7F8FA] transition align-top">
                   <td className="p-3 text-sm text-[#475569] whitespace-nowrap">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
                   <td className="p-3 font-bold text-[#172033] break-words">{t.note}</td>
-                  <td className="p-3 break-words"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
-                  <td className="p-3 text-xs font-bold break-words">
+                  <td className="p-3"><span className="inline-block whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
+                  <td className="p-3 text-xs font-bold whitespace-normal">
                     {isTransfer ? <span className="text-[#4F46E5]">{accName} → {toAccName}</span> : <span className="text-[#475569]">{accName}</span>}
                   </td>
                   <td className="p-3 text-sm font-black text-[#16A34A] text-right whitespace-nowrap">{renderTypeAmount(t,'income')}</td>
@@ -786,8 +756,6 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    injectPWA();
-
     let mounted = true;
 
     const hydrateSession = async (session) => {
@@ -1874,8 +1842,8 @@ export default function App() {
       <div className="min-h-screen bg-[#172033] flex items-center justify-center p-4 font-sans">
         <div className="w-full max-w-md">
           <div className="text-center mb-7">
-            <div className="inline-flex w-16 h-16 items-center justify-center rounded-2xl bg-[#D4A72C] shadow-xl mb-4">
-              <Wallet size={34} className="text-[#172033]" />
+            <div className="inline-flex w-20 h-20 items-center justify-center rounded-2xl bg-[#172033] shadow-xl mb-4 overflow-hidden border border-white/10">
+              <img src="/icons/icon-192.png?v=6" alt="Logo DompetKu" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-3xl font-black text-white">DompetKu</h1>
             <p className="text-[#D4A72C] text-xs font-bold uppercase tracking-widest mt-1">Catat. Kendalikan. Rencanakan.</p>
@@ -2090,7 +2058,7 @@ export default function App() {
             .report-screen { display:none !important; }
             .report-print-only { display:block !important; }
             .preview-sheet { width:100% !important; max-width:none !important; margin:0 !important; padding:12mm 8mm 8mm !important; border:0 !important; box-shadow:none !important; }
-            .preview-header { display:flex !important; flex-direction:row !important; justify-content:space-between !important; align-items:flex-end !important; gap:12px !important; }
+            .preview-header { display:grid !important; grid-template-columns:1fr auto !important; flex-direction:unset !important; justify-content:unset !important; align-items:start !important; gap:12px !important; }
             .preview-summary { display:grid !important; grid-template-columns:repeat(4, 1fr) !important; gap:8px !important; }
             .preview-summary-card { padding:9px !important; }
             .preview-summary-card h2 { font-size:14px !important; line-height:1.15 !important; }
@@ -2122,15 +2090,15 @@ export default function App() {
         </div>
 
         <div id="dompetku-report" className="preview-sheet bg-white max-w-5xl w-full shadow-lg mt-20 md:mt-6 p-4 md:p-10 border border-[#E2E8F0] rounded-2xl md:rounded-3xl">
-          <div className="preview-header border-b-4 border-[#172033] pb-5 mb-6 flex justify-between items-end">
-            <div className="flex items-center gap-3 min-w-0">
-              <UserAvatar user={user} size={14} textClass="text-2xl" />
+          <div className="preview-header border-b-4 border-[#172033] pb-5 mb-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5 md:gap-8 items-start">
+            <div className="flex items-center gap-4 min-w-0">
+              <img src="/icons/icon-192.png?v=6" alt="Logo DompetKu" className="w-20 h-20 md:w-24 md:h-24 rounded-2xl object-contain shrink-0" />
               <div className="min-w-0">
-                <h1 className="text-3xl md:text-5xl font-black uppercase tracking-[0.16em] text-[#172033] leading-none">DOMPETKU</h1>
-                <p className="text-[#475569] mt-2 font-bold text-sm md:text-lg tracking-[0.12em]">LAPORAN KEUANGAN PRIBADI</p>
+                <h1 className="text-3xl md:text-5xl font-black uppercase tracking-[0.12em] text-[#172033] leading-none">DOMPETKU</h1>
+                <p className="text-[#475569] mt-2 font-bold text-sm md:text-lg tracking-[0.08em]">LAPORAN KEUANGAN PRIBADI</p>
               </div>
             </div>
-            <div className="preview-header-meta shrink-0 text-right text-xs md:text-sm text-[#475569] font-medium bg-[#F7F8FA] p-3 rounded-lg border border-[#E2E8F0]">
+            <div className="preview-header-meta w-full md:w-auto md:min-w-[250px] text-left md:text-right text-xs md:text-sm text-[#475569] font-medium bg-[#F7F8FA] p-4 rounded-lg border border-[#E2E8F0]">
               <p>Pemilik Akun: <span className="font-bold text-[#172033] uppercase">{user?.name}</span></p>
               <p>Periode: <span className="font-bold text-[#172033] uppercase">{reportPeriod}</span></p>
               <p>Tanggal Cetak: <span className="font-bold text-[#172033]">{new Date().toLocaleDateString('id-ID')}</span></p>
@@ -2179,7 +2147,7 @@ export default function App() {
                     return <tr key={t.id} className="border-b border-[#E2E8F0]">
                       <td className="text-[#475569] whitespace-nowrap">{t.dateStr || new Date(t.timestamp).toLocaleDateString('id-ID')}</td>
                       <td className="font-bold text-[#172033] break-words">{t.note}</td>
-                      <td className="break-words"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
+                      <td className="p-3"><span className="inline-block whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded bg-[#F7F8FA] text-[#64748B] uppercase border border-[#E2E8F0]">{t.category}</span></td>
                       <td className="font-bold break-words">{isTransfer ? <span className="text-[#4F46E5]">{src} → {dest}</span> : src}</td>
                       <td className="text-right money-cell text-[#16A34A] font-black">{t.type === 'income' ? <Money value={t.amount}/> : '-'}</td>
                       <td className="text-right money-cell text-[#DC2626] font-black">{t.type === 'expense' ? <Money value={t.amount}/> : '-'}</td>
@@ -2264,8 +2232,13 @@ export default function App() {
     <div className="min-h-screen bg-[#F7F8FA] text-[#172033] font-sans flex flex-col md:flex-row print-hidden">
       <nav className="hidden md:flex flex-col w-64 bg-[#172033] text-white h-screen sticky top-0 shrink-0 shadow-2xl">
          <div className="p-6 border-b border-[#0F172A]">
-           <h1 className="text-2xl font-black text-white flex items-center gap-2"><Wallet className="text-[#D4A72C]"/> DompetKu</h1>
-           <p className="text-[10px] uppercase tracking-widest text-[#D4A72C] font-bold mt-1">Catat. Kendalikan. Rencanakan.</p>
+           <div className="flex items-center gap-3">
+             <img src="/icons/icon-192.png?v=6" alt="Logo DompetKu" className="w-11 h-11 rounded-xl object-contain shrink-0" />
+             <div className="min-w-0">
+               <h1 className="text-2xl font-black text-white leading-none">DompetKu</h1>
+               <p className="text-[9px] uppercase tracking-widest text-[#D4A72C] font-bold mt-1">Catat. Kendalikan. Rencanakan.</p>
+             </div>
+           </div>
          </div>
          <div className="flex-1 py-6 px-4 space-y-2 overflow-y-auto">
             {[
@@ -2294,7 +2267,10 @@ export default function App() {
       </nav>
 
       <header className="md:hidden bg-[#172033] p-4 flex justify-between items-center sticky top-0 z-40 shadow-md">
-        <h1 className="text-lg font-black text-white flex items-center gap-2"><Wallet size={18} className="text-[#D4A72C]"/> DompetKu</h1>
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/icons/icon-192.png?v=6" alt="Logo DompetKu" className="w-9 h-9 rounded-lg object-contain shrink-0" />
+          <h1 className="text-lg font-black text-white truncate">DompetKu</h1>
+        </div>
         <div onClick={() => setActiveTab('settings')} className="cursor-pointer">
            <UserAvatar user={user} size={8} textClass="text-sm" />
         </div>

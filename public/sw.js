@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dompetku-v1-shell';
+const CACHE_NAME = 'dompetku-v3-shell';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
