@@ -1,0 +1,29 @@
+{
+  "name": "dompetku",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest",
+    "tailwindcss": "^3.4.17",
+    "postcss": "latest",
+    "autoprefixer": "latest",
+    "@capacitor/core": "^8.1.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "jspdf": "^4.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {}
+}
